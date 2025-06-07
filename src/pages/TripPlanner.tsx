@@ -148,112 +148,94 @@ const TripPlanner = () => {
     if (credits === undefined || credits < 1) {
       toast.error("Insufficient credits! Please purchase more credits to generate a trip plan.");
       return;
-    }
-
-    try {
+    }    try {
       setIsGeneratingTrip(true);
       setLoadingStep(1);
 
       // Use the maximum budget value for functions that expect a single number
       const budgetValue = budget[1]; // Use max value from range
-
-      // Step 1: Analyzing Destination
-      setLoadingStep(1);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Step 2: Creating Itinerary
-      setLoadingStep(2);
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      // Step 3: Finding Activities
-      setLoadingStep(3);
-      await new Promise(resolve => setTimeout(resolve, 600));
-
-      // Step 4: Curating Cuisine
-      setLoadingStep(4);
-      await new Promise(resolve => setTimeout(resolve, 600));
-
-      // Step 5: Weather Analysis
-      setLoadingStep(5);
       
-      // Generate comprehensive trip details using AI service
-      const tripDetails = await geminiService.generateTripDetails({
+      // Prepare email data
+      const emailPreparation = {
+        destination,
+        days,
+        startDate,
+        endDate,
+        people,
+        budget: budgetValue,
+        activities,
+        travelWith: "general",
+      };
+
+      // Progressive AI generation with real-time updates
+      const tripDetails = await geminiService.generateTripDetailsProgressive({
         destination,
         days,
         people,
         budget: budgetValue.toString(),
         activities,
         travelWith: "general",
+      }, (step: string, data: any) => {
+        // Update loading step based on progress
+        switch (step) {
+          case 'Analyzing destination...':
+            setLoadingStep(1);
+            break;
+          case 'Finding activities...':
+            setLoadingStep(2);
+            break;
+          case 'Creating itinerary...':
+            setLoadingStep(3);
+            break;
+          case 'Gathering practical info...':
+            setLoadingStep(4);
+            break;
+          case 'Finalizing details...':
+            setLoadingStep(5);
+            break;
+          case 'complete':
+            setLoadingStep(6);
+            break;
+          default:
+            // Handle partial data updates (could be used for preview)
+            if (data) {
+              console.log(`Progressive update - ${step}:`, data);
+            }
+        }
       });
-
-      // Step 6: Finalizing Details
-      setLoadingStep(6);
-      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Deduct credit and create trip plan with detailed information
       const result = await deductCredit({
         clerkId: user.id,
-        tripPlanData: {
-          destination,
-          days,
-          startDate,
-          endDate,
-          people,
-          budget: budgetValue,
-          activities,
-          travelWith: "general",
-        },
+        tripPlanData: emailPreparation,
         tripDetails,
       });
 
       if (result.success) {
-        toast.success(`Trip plan generated! You have ${result.remainingCredits} credits remaining 🎉`);
-
-        // Send confirmation email
-        try {
-          const emailResult = await sendTripEmail({
-            to: user.primaryEmailAddress?.emailAddress || "",
-            userName: user.fullName || "Traveler",
-            tripData: {
-              destination,
-              days,
-              startDate,
-              endDate,
-              people,
-              budget: budgetValue,
-              activities,
-              travelWith: "general",
-            },
-            tripDetails
-          });
-
+        toast.success(`Trip plan generated! You have ${result.remainingCredits} credits remaining 🎉`);        // Send confirmation email asynchronously (don't wait for it)
+        sendTripEmail({
+          to: user.primaryEmailAddress?.emailAddress || "",
+          userName: user.fullName || "Traveler",
+          tripData: emailPreparation,
+          tripDetails
+        }).then(emailResult => {
           if (emailResult.success) {
             if ('isDemo' in emailResult && emailResult.isDemo) {
-              toast.success("Trip details have been generated! 🎉");
-              toast.info("📧 Demo email sent to somejeha4567@gmail.com (sandbox mode)");
+              toast.success("📧 Trip details sent to demo email!");
             } else {
-              toast.success("Trip details have been sent to your email address! 📧");
+              toast.success("📧 Trip details sent to your email!");
             }
-          } else {
-            toast.success("Trip created successfully! 🎉");
-            toast.info("Email notification temporarily unavailable.");
           }
-        } catch (emailError) {
-          // Gracefully handle any email errors
-          toast.success("Trip created successfully! 🎉");
-          toast.info("Email notification temporarily unavailable.");        }
+        }).catch(() => {
+          // Silently handle email errors
+          console.log("Email notification temporarily unavailable");
+        });
         
-        // Start transition to results
-        setIsTransitioning(true);
-        setLoadingStep(6); // Keep showing final step
-        
-        // Delay showing results to ensure smooth transition
-        setTimeout(() => {
-          setShowResults(true);
-          setIsGeneratingTrip(false);
-          setIsTransitioning(false);
-          setLoadingStep(0);
-        }, 1000); // Give time for UI to prepare
+        // Show results immediately - no transition delay
+        setShowResults(true);
+        setIsGeneratingTrip(false);
+        setIsTransitioning(false);
+        setLoadingStep(0);
       }    } catch (error) {
       console.error("Error generating trip:", error);
       if (error instanceof Error && error.message === "Insufficient credits") {
