@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <defs>
+    <linearGradient id="bg180" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="90" cy="90" r="85" fill="url(#bg180)" />
+  
+  <!-- AI Neural Network Pattern -->
+  <circle cx="45" cy="45" r="6" fill="#FBBF24" opacity="0.8" />
+  <circle cx="135" cy="45" r="5" fill="#FBBF24" opacity="0.7" />
+  <circle cx="45" cy="135" r="5" fill="#FBBF24" opacity="0.7" />
+  <circle cx="135" cy="135" r="6" fill="#FBBF24" opacity="0.8" />
+  <circle cx="90" cy="30" r="4" fill="#FBBF24" opacity="0.6" />
+  <circle cx="30" cy="90" r="4" fill="#FBBF24" opacity="0.6" />
+  <circle cx="150" cy="90" r="4" fill="#FBBF24" opacity="0.6" />
+  <circle cx="90" cy="150" r="4" fill="#FBBF24" opacity="0.6" />
+  
+  <!-- Connecting lines for AI network -->
+  <path d="M45 45 L135 45 L135 135 L45 135 Z M90 30 L90 150 M30 90 L150 90" 
+        stroke="#FBBF24" stroke-width="1.5" opacity="0.4" fill="none" />
+  
+  <!-- Central Airplane with shadow -->
+  <g filter="url(#shadow)">
+    <path d="M90 40 L110 80 L140 90 L110 100 L90 140 L80 130 L80 100 L50 90 L80 80 L80 50 Z" 
+          fill="white" stroke="#1F2937" stroke-width="2" />
+  </g>
+  
+  <!-- Flight path indicators -->
+  <circle cx="70" cy="70" r="3" fill="#60A5FA" opacity="0.8" />
+  <circle cx="110" cy="110" r="3" fill="#60A5FA" opacity="0.8" />
+  <circle cx="110" cy="70" r="2.5" fill="#60A5FA" opacity="0.6" />
+  <circle cx="70" cy="110" r="2.5" fill="#60A5FA" opacity="0.6" />
+    <!-- AI Text indicator -->
+  <text x="90" y="165" font-family="Arial, sans-serif" font-size="12" font-weight="bold" 
+        text-anchor="middle" fill="white" opacity="0.9">BonVoyage</text>
+  <text x="90" y="175" font-family="Arial, sans-serif" font-size="8" font-weight="normal" 
+        text-anchor="middle" fill="white" opacity="0.7">Exclusive Travel</text>
+</svg>

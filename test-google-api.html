@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Google Maps API Test</title>
+</head>
+<body>
+    <h1>Google Maps API Test</h1>
+    <div id="result"></div>
+    <input type="text" id="searchInput" placeholder="Type to search places..." style="width: 300px; padding: 10px;">
+    <div id="suggestions"></div>
+
+    <script>
+        function initMap() {
+            console.log('Google Maps API loaded successfully!');
+            
+            // Test if Places API is available
+            if (window.google && window.google.maps && window.google.maps.places) {
+                console.log('Places API is available');
+                document.getElementById('result').innerHTML = '<p style="color: green;">✓ Google Maps API loaded successfully!</p><p style="color: green;">✓ Places API is available</p>';
+                
+                // Test AutocompleteSuggestion (new API)
+                if (window.google.maps.places.AutocompleteSuggestion) {
+                    console.log('AutocompleteSuggestion API is available');
+                    document.getElementById('result').innerHTML += '<p style="color: green;">✓ AutocompleteSuggestion API is available</p>';
+                    testAutocompleteSuggestion();
+                } else {
+                    console.log('AutocompleteSuggestion API is NOT available');
+                    document.getElementById('result').innerHTML += '<p style="color: orange;">⚠ AutocompleteSuggestion API is NOT available</p>';
+                    testLegacyAutocompleteService();
+                }
+            } else {
+                console.error('Places API is not available');
+                document.getElementById('result').innerHTML = '<p style="color: red;">✗ Places API is not available</p>';
+            }
+        }
+
+        function testAutocompleteSuggestion() {
+            const input = document.getElementById('searchInput');
+            const suggestionsDiv = document.getElementById('suggestions');
+            
+            input.addEventListener('input', async (e) => {
+                const query = e.target.value;
+                if (query.length < 2) {
+                    suggestionsDiv.innerHTML = '';
+                    return;
+                }
+                
+                try {
+                    // Test new AutocompleteSuggestion API
+                    const { suggestions } = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+                        input: query,
+                        includedPrimaryTypes: ['locality', 'administrative_area_level_1', 'country'],
+                        locationBias: { radius: 100000, center: { lat: 37.7749, lng: -122.4194 } }
+                    });
+                    
+                    suggestionsDiv.innerHTML = '<h3>New API Results:</h3>';
+                    suggestions.forEach(suggestion => {
+                        const div = document.createElement('div');
+                        div.style.padding = '5px';
+                        div.style.border = '1px solid #ccc';
+                        div.style.margin = '2px';
+                        div.innerHTML = suggestion.placePrediction.text.text;
+                        suggestionsDiv.appendChild(div);
+                    });
+                } catch (error) {
+                    console.error('AutocompleteSuggestion error:', error);
+                    suggestionsDiv.innerHTML = '<p style="color: red;">Error with new API: ' + error.message + '</p>';
+                    testLegacyAutocompleteService();
+                }
+            });
+        }
+
+        function testLegacyAutocompleteService() {
+            const input = document.getElementById('searchInput');
+            const suggestionsDiv = document.getElementById('suggestions');
+            
+            const autocompleteService = new google.maps.places.AutocompleteService();
+            
+            input.addEventListener('input', (e) => {
+                const query = e.target.value;
+                if (query.length < 2) {
+                    suggestionsDiv.innerHTML = '';
+                    return;
+                }
+                
+                autocompleteService.getPlacePredictions({
+                    input: query,
+                    types: ['(cities)']
+                }, (predictions, status) => {
+                    if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
+                        suggestionsDiv.innerHTML = '<h3>Legacy API Results:</h3>';
+                        predictions.forEach(prediction => {
+                            const div = document.createElement('div');
+                            div.style.padding = '5px';
+                            div.style.border = '1px solid #ccc';
+                            div.style.margin = '2px';
+                            div.innerHTML = prediction.description;
+                            suggestionsDiv.appendChild(div);
+                        });
+                    } else {
+                        suggestionsDiv.innerHTML = '<p style="color: red;">Error: ' + status + '</p>';
+                    }
+                });
+            });
+        }
+
+        function handleError(error) {
+            console.error('Google Maps API error:', error);
+            document.getElementById('result').innerHTML = '<p style="color: red;">✗ Error loading Google Maps API: ' + error.message + '</p>';
+        }
+    </script>
+    
+    <script async defer 
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA_4hF_0YvWH5sCkFjCafx_sng2WxSxS0k&libraries=places&callback=initMap&loading=async"
+        onerror="handleError(new Error('Failed to load Google Maps API'))">
+    </script>
+</body>
+</html>
