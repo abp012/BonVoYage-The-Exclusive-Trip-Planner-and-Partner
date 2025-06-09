@@ -4,8 +4,16 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
 
-// Get the Gemini 2.0 Flash model
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+// Use faster model for better performance
+const model = genAI.getGenerativeModel({ 
+  model: "gemini-1.5-flash",
+  generationConfig: {
+    temperature: 0.7,
+    topK: 40,
+    topP: 0.95,
+    maxOutputTokens: 2048, // Limit output for faster response
+  }
+});
 
 export interface DestinationInfo {
   overview: string;
@@ -817,6 +825,307 @@ class GeminiService {
       console.error('Error generating best time to visit with Gemini:', error);
       return null;
     }
+  }
+
+  /**
+   * Progressive trip generation - Break down into smaller, faster API calls
+   */
+  async generateTripDetailsProgressive(
+    tripData: {
+      destination: string;
+      days: number;
+      budget: string;
+      activities: string[];
+      travelWith: string;
+      people: number;
+    },
+    onProgressUpdate?: (step: string, data: any) => void
+  ): Promise<ComprehensiveTripDetails | null> {
+    if (!this.isApiKeyValid()) {
+      return null;
+    }
+
+    try {
+      const { destination, days, budget, activities, travelWith, people } = tripData;
+      const activitiesText = activities.join(', ');
+      
+      // Step 1: Basic Info (fast)
+      onProgressUpdate?.('Analyzing destination...', null);
+      const basicInfo = await this.generateBasicTripInfo(destination, days, people, travelWith);
+      onProgressUpdate?.('basic-info', basicInfo);
+      
+      // Step 2: Activities & Places (medium)
+      onProgressUpdate?.('Finding activities...', null);
+      const activitiesData = await this.generateActivitiesAndPlaces(destination, activities, days);
+      onProgressUpdate?.('activities', activitiesData);
+      
+      // Step 3: Itinerary (medium-fast)
+      onProgressUpdate?.('Creating itinerary...', null);
+      const itinerary = await this.generateDailyItinerary(destination, days, activities, people);
+      onProgressUpdate?.('itinerary', itinerary);
+      
+      // Step 4: Practical Info (fast)
+      onProgressUpdate?.('Gathering practical info...', null);
+      const practicalInfo = await this.generatePracticalInfo(destination, budget, people, days);
+      onProgressUpdate?.('practical-info', practicalInfo);
+      
+      // Step 5: Combine all data
+      onProgressUpdate?.('Finalizing details...', null);
+      const combinedData: ComprehensiveTripDetails = {
+        cityDescription: basicInfo.cityDescription,
+        topActivities: activitiesData.topActivities,
+        localCuisine: practicalInfo.localCuisine,
+        packingList: practicalInfo.packingList,
+        weatherInfo: practicalInfo.weatherInfo,
+        detailedItinerary: itinerary,
+        bestTimeToVisit: basicInfo.bestTimeToVisit,
+        travelTips: practicalInfo.travelTips,
+        placesToVisit: activitiesData.placesToVisit,
+        transportation: practicalInfo.transportation,
+        budget: practicalInfo.budget
+      };
+      
+      onProgressUpdate?.('complete', combinedData);
+      return combinedData;
+      
+    } catch (error) {
+      console.error('Error in progressive trip generation:', error);
+      return this.createFallbackTripDetails(tripData);
+    }
+  }
+
+  /**
+   * Generate basic trip information (fast call)
+   */
+  private async generateBasicTripInfo(destination: string, days: number, people: number, travelWith: string) {
+    const prompt = `
+      Create basic trip information for ${destination} for ${days} days for ${people} ${travelWith} travelers.
+      
+      Respond ONLY with valid JSON:
+      {
+        "cityDescription": "Engaging 150-word description of ${destination}",
+        "bestTimeToVisit": "Best time to visit ${destination} with specific months and brief reasons"
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {
+        return {
+          cityDescription: `${destination} is a fascinating destination offering rich cultural experiences, stunning landscapes, and memorable adventures for travelers.`,
+          bestTimeToVisit: "The best time to visit varies by season - please check local weather patterns for optimal travel dates."
+        };
+      }
+    }
+    
+    return {
+      cityDescription: `${destination} is a fascinating destination offering rich cultural experiences, stunning landscapes, and memorable adventures for travelers.`,
+      bestTimeToVisit: "The best time to visit varies by season - please check local weather patterns for optimal travel dates."
+    };
+  }
+
+  /**
+   * Generate activities and places (medium speed call)
+   */
+  private async generateActivitiesAndPlaces(destination: string, activities: string[], days: number) {
+    const activitiesText = activities.join(', ');
+    const prompt = `
+      Create activities and places for ${destination} focusing on: ${activitiesText}
+      
+      Respond ONLY with valid JSON:
+      {
+        "topActivities": ["activity1", "activity2", "activity3", "activity4", "activity5", "activity6"],
+        "placesToVisit": [
+          {
+            "name": "Place name",
+            "description": "Brief description",
+            "category": "attraction"
+          },
+          {
+            "name": "Place name 2",
+            "description": "Brief description",
+            "category": "cultural"
+          }
+        ]
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {
+        return {
+          topActivities: activities.length > 0 ? activities : ["Sightseeing", "Local cuisine", "Cultural exploration"],
+          placesToVisit: [
+            { name: "Main Attraction", description: "Must-visit landmark", category: "attraction" },
+            { name: "Cultural Site", description: "Local cultural experience", category: "cultural" }
+          ]
+        };
+      }
+    }
+    
+    return {
+      topActivities: activities.length > 0 ? activities : ["Sightseeing", "Local cuisine", "Cultural exploration"],
+      placesToVisit: [
+        { name: "Main Attraction", description: "Must-visit landmark", category: "attraction" },
+        { name: "Cultural Site", description: "Local cultural experience", category: "cultural" }
+      ]
+    };
+  }
+
+  /**
+   * Generate daily itinerary (medium-fast call)
+   */
+  private async generateDailyItinerary(destination: string, days: number, activities: string[], people: number) {
+    const activitiesText = activities.join(', ');
+    const prompt = `
+      Create a ${days}-day itinerary for ${destination} for ${people} travelers focusing on: ${activitiesText}
+      
+      Respond ONLY with valid JSON array:
+      [
+        {
+          "day": 1,
+          "title": "Day 1 - Arrival & Exploration",
+          "morning": "Morning activities (9:00 AM - 12:00 PM)",
+          "afternoon": "Afternoon activities (1:00 PM - 5:00 PM)",
+          "evening": "Evening activities (6:00 PM - 9:00 PM)"
+        }
+      ]
+      
+      Generate exactly ${days} days.
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {
+        return this.generateFallbackItinerary(days);
+      }
+    }
+    
+    return this.generateFallbackItinerary(days);
+  }
+
+  /**
+   * Generate practical information (fast call)
+   */
+  private async generatePracticalInfo(destination: string, budget: string, people: number, days: number) {
+    const prompt = `
+      Create practical travel information for ${destination} for ${people} travelers, budget ${budget}, ${days} days.
+      
+      Respond ONLY with valid JSON:
+      {
+        "localCuisine": ["dish1 - description", "dish2 - description", "dish3 - description"],
+        "packingList": ["item1", "item2", "item3", "item4", "item5"],
+        "weatherInfo": {
+          "temperature": "20-25°C",
+          "condition": "Pleasant",
+          "humidity": "Moderate",
+          "windSpeed": "Light",
+          "description": "Weather description"
+        },
+        "travelTips": [
+          {
+            "category": "Transportation",
+            "title": "Tip title",
+            "description": "Tip description"
+          }
+        ],
+        "transportation": {
+          "local": ["option1", "option2"],
+          "intercity": ["option1", "option2"],
+          "tips": ["tip1", "tip2"]
+        },
+        "budget": {
+          "accommodation": "₹${Math.round(parseInt(budget) * 0.4)} - ₹${Math.round(parseInt(budget) * 0.6)}",
+          "food": "₹${Math.round(parseInt(budget) * 0.2)} - ₹${Math.round(parseInt(budget) * 0.3)}",
+          "transportation": "₹${Math.round(parseInt(budget) * 0.1)} - ₹${Math.round(parseInt(budget) * 0.2)}",
+          "activities": "₹${Math.round(parseInt(budget) * 0.1)} - ₹${Math.round(parseInt(budget) * 0.2)}",
+          "total": "₹${budget} (estimated for ${people} ${people === 1 ? 'person' : 'people'})"
+        }
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {
+        return this.generateFallbackPracticalInfo(destination, budget, people);
+      }
+    }
+    
+    return this.generateFallbackPracticalInfo(destination, budget, people);
+  }
+
+  /**
+   * Fallback methods for when API calls fail
+   */
+  private generateFallbackItinerary(days: number) {
+    const itinerary = [];
+    for (let day = 1; day <= days; day++) {
+      itinerary.push({
+        day: day,
+        title: `Day ${day} - Exploration`,
+        morning: "Morning exploration and sightseeing (9:00 AM - 12:00 PM)",
+        afternoon: "Afternoon activities and local experiences (1:00 PM - 5:00 PM)",
+        evening: day === days ? "Preparation for departure" : "Evening leisure and dining (6:00 PM - 9:00 PM)"
+      });
+    }
+    return itinerary;
+  }
+
+  private generateFallbackPracticalInfo(destination: string, budget: string, people: number) {
+    return {
+      localCuisine: ["Local specialties", "Traditional dishes", "Regional cuisine"],
+      packingList: ["Comfortable walking shoes", "Weather-appropriate clothing", "Camera", "Travel documents", "Personal essentials"],
+      weatherInfo: {
+        temperature: "Pleasant",
+        condition: "Variable",
+        humidity: "Moderate",
+        windSpeed: "Light",
+        description: "Check local weather before travel"
+      },
+      travelTips: [
+        {
+          category: "General",
+          title: "Plan ahead",
+          description: "Research local customs and attractions"
+        }
+      ],
+      transportation: {
+        local: ["Public transport", "Taxi services"],
+        intercity: ["Bus", "Train"],
+        tips: ["Book in advance", "Keep tickets safe"]
+      },
+      budget: {
+        accommodation: `₹${Math.round(parseInt(budget) * 0.4)} - ₹${Math.round(parseInt(budget) * 0.6)}`,
+        food: `₹${Math.round(parseInt(budget) * 0.2)} - ₹${Math.round(parseInt(budget) * 0.3)}`,
+        transportation: `₹${Math.round(parseInt(budget) * 0.1)} - ₹${Math.round(parseInt(budget) * 0.2)}`,
+        activities: `₹${Math.round(parseInt(budget) * 0.1)} - ₹${Math.round(parseInt(budget) * 0.2)}`,
+        total: `₹${budget} (estimated for ${people} ${people === 1 ? 'person' : 'people'})`
+      }
+    };
   }
 }
 

@@ -37,7 +37,7 @@ const loadingSteps = [
     id: 1,
     icon: MapPin,
     title: "Analyzing Destination",
-    description: "Researching your chosen destination and gathering local insights",
+    description: "Researching your destination and gathering local insights",
     color: "text-blue-600",
     bgColor: "bg-blue-50",
     borderColor: "border-blue-200",
@@ -45,12 +45,28 @@ const loadingSteps = [
     tips: [
       "🗺️ Exploring local attractions and hidden gems",
       "🏛️ Analyzing cultural highlights and traditions",
-      "🚗 Researching transportation options",
-      "📍 Finding the best neighborhoods to visit"
+      "🌟 Finding the best time to visit",
+      "📍 Understanding local customs and etiquette"
     ]
   },
   {
     id: 2,
+    icon: Activity,
+    title: "Finding Activities",
+    description: "Discovering exciting activities and attractions tailored to you",
+    color: "text-green-600",
+    bgColor: "bg-green-50",
+    borderColor: "border-green-200",
+    gradient: "from-green-500 to-green-700",
+    tips: [
+      "🎯 Matching activities to your interests",
+      "👨‍👩‍👧‍👦 Finding experiences for your group size",
+      "🏔️ Discovering adventure opportunities",
+      "🎨 Exploring cultural experiences"
+    ]
+  },
+  {
+    id: 3,
     icon: Calendar,
     title: "Creating Itinerary",
     description: "Crafting a personalized day-by-day travel plan",
@@ -66,51 +82,34 @@ const loadingSteps = [
     ]
   },
   {
-    id: 3,
-    icon: Activity,
-    title: "Finding Activities",
-    description: "Discovering exciting activities and attractions",
-    color: "text-green-600",
-    bgColor: "bg-green-50",
-    borderColor: "border-green-200",
-    gradient: "from-green-500 to-green-700",
-    tips: [
-      "🎯 Matching activities to your interests",
-      "👨‍👩‍👧‍👦 Finding family-friendly options",
-      "🏔️ Discovering adventure opportunities",
-      "🎨 Exploring cultural experiences"
-    ]
-  },
-  {
     id: 4,
     icon: Utensils,
-    title: "Curating Cuisine",
-    description: "Selecting the best local food experiences",
+    title: "Gathering Practical Info",
+    description: "Collecting essential travel information and local tips",
     color: "text-red-600",
     bgColor: "bg-red-50",
     borderColor: "border-red-200",
     gradient: "from-red-500 to-red-700",
     tips: [
       "🍽️ Finding authentic local restaurants",
-      "🥘 Discovering street food gems",
-      "🥗 Considering dietary preferences",
-      "🍷 Recommending local beverages"
+      "🚗 Researching transportation options",
+      "💰 Creating budget breakdowns",
+      "🎒 Preparing packing recommendations"
     ]
   },
-  {
-    id: 5,
-    icon: Cloud,
-    title: "Weather Analysis",
-    description: "Checking weather patterns and packing recommendations",
-    color: "text-cyan-600",
-    bgColor: "bg-cyan-50",
-    borderColor: "border-cyan-200",
-    gradient: "from-cyan-500 to-cyan-700",
+  {    id: 5,
+    icon: Brain,
+    title: "AI Processing",
+    description: "Advanced AI analyzing and optimizing your travel plan",
+    color: "text-orange-600",
+    bgColor: "bg-orange-50",
+    borderColor: "border-orange-200",
+    gradient: "from-orange-500 to-orange-700",
     tips: [
-      "🌤️ Analyzing seasonal weather patterns",
-      "🧳 Creating smart packing lists",
-      "☂️ Planning weather-appropriate activities",
-      "🌡️ Providing climate insights"
+      "🤖 AI is connecting all the pieces",
+      "⚡ Processing thousands of possibilities",
+      "🎯 Optimizing for your preferences",
+      "📊 Analyzing travel patterns and trends"
     ]
   },
   {
@@ -135,11 +134,13 @@ const motivationalMessages = [
   "✨ Creating magic just for you...",
   "🌍 Exploring the world to find the best experiences...",
   "🎯 Personalizing every detail to match your style...",
-  "🚀 Almost ready to launch your adventure...",
-  "💫 Adding the finishing touches to your perfect trip...",
-  "🧠 AI is thinking of amazing possibilities...",
+  "🚀 Progressive AI working step by step...",
+  "💫 Building your perfect trip piece by piece...",
+  "🧠 AI is analyzing thousands of possibilities...",
   "🎨 Crafting a masterpiece of travel experiences...",
-  "🔮 Predicting the most memorable moments..."
+  "⚡ Smart algorithms optimizing your journey...",
+  "🔮 Each step brings you closer to adventure...",
+  "🎭 Curating experiences tailored just for you..."
 ];
 
 const backgroundParticles = [
