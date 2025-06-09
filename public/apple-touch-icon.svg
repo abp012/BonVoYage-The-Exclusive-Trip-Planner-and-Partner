@@ -1,45 +1,64 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
   <defs>
     <linearGradient id="bg180" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+      <stop offset="0%" style="stop-color:#0EA5E9;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#3B82F6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6366F1;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="brain180" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FBBF24;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F59E0B;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="pin180" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFFFF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F8FAFC;stop-opacity:1" />
     </linearGradient>
     <filter id="shadow">
-      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+      <feDropShadow dx="3" dy="3" stdDeviation="4" flood-opacity="0.3"/>
     </filter>
   </defs>
   
   <!-- Background circle -->
   <circle cx="90" cy="90" r="85" fill="url(#bg180)" />
   
-  <!-- AI Neural Network Pattern -->
-  <circle cx="45" cy="45" r="6" fill="#FBBF24" opacity="0.8" />
-  <circle cx="135" cy="45" r="5" fill="#FBBF24" opacity="0.7" />
-  <circle cx="45" cy="135" r="5" fill="#FBBF24" opacity="0.7" />
-  <circle cx="135" cy="135" r="6" fill="#FBBF24" opacity="0.8" />
-  <circle cx="90" cy="30" r="4" fill="#FBBF24" opacity="0.6" />
-  <circle cx="30" cy="90" r="4" fill="#FBBF24" opacity="0.6" />
-  <circle cx="150" cy="90" r="4" fill="#FBBF24" opacity="0.6" />
-  <circle cx="90" cy="150" r="4" fill="#FBBF24" opacity="0.6" />
-  
-  <!-- Connecting lines for AI network -->
-  <path d="M45 45 L135 45 L135 135 L45 135 Z M90 30 L90 150 M30 90 L150 90" 
-        stroke="#FBBF24" stroke-width="1.5" opacity="0.4" fill="none" />
-  
-  <!-- Central Airplane with shadow -->
+  <!-- AI Brain outline with shadow -->
   <g filter="url(#shadow)">
-    <path d="M90 40 L110 80 L140 90 L110 100 L90 140 L80 130 L80 100 L50 90 L80 80 L80 50 Z" 
-          fill="white" stroke="#1F2937" stroke-width="2" />
+    <path d="M40 65 Q40 35 65 35 Q90 35 115 35 Q140 35 140 65 Q140 95 130 105 Q120 115 90 115 Q60 115 50 105 Q40 95 40 65 Z" 
+          fill="none" stroke="url(#brain180)" stroke-width="4" opacity="0.9" />
   </g>
   
-  <!-- Flight path indicators -->
-  <circle cx="70" cy="70" r="3" fill="#60A5FA" opacity="0.8" />
-  <circle cx="110" cy="110" r="3" fill="#60A5FA" opacity="0.8" />
-  <circle cx="110" cy="70" r="2.5" fill="#60A5FA" opacity="0.6" />
-  <circle cx="70" cy="110" r="2.5" fill="#60A5FA" opacity="0.6" />
-    <!-- AI Text indicator -->
-  <text x="90" y="165" font-family="Arial, sans-serif" font-size="12" font-weight="bold" 
-        text-anchor="middle" fill="white" opacity="0.9">BonVoyage</text>
-  <text x="90" y="175" font-family="Arial, sans-serif" font-size="8" font-weight="normal" 
-        text-anchor="middle" fill="white" opacity="0.7">Exclusive Travel</text>
+  <!-- Neural network nodes -->
+  <circle cx="60" cy="60" r="4" fill="#FBBF24" />
+  <circle cx="90" cy="50" r="4" fill="#FBBF24" />
+  <circle cx="120" cy="60" r="4" fill="#FBBF24" />
+  <circle cx="70" cy="85" r="4" fill="#FBBF24" />
+  <circle cx="110" cy="85" r="4" fill="#FBBF24" />
+  <circle cx="90" cy="75" r="4" fill="#FBBF24" />
+  
+  <!-- Neural connections -->
+  <path d="M60 60 L90 50 M90 50 L120 60 M60 60 L70 85 M120 60 L110 85 M70 85 L90 75 M90 75 L110 85 M90 50 L90 75" 
+        stroke="#FBBF24" stroke-width="2.5" opacity="0.7" fill="none" />
+  
+  <!-- Location pin for destination with shadow -->
+  <g filter="url(#shadow)">
+    <path d="M90 125 Q80 115 80 105 Q80 95 90 95 Q100 95 100 105 Q100 115 90 125 Z" 
+          fill="url(#pin180)" stroke="#1E293B" stroke-width="2" />
+    <circle cx="90" cy="105" r="8" fill="#EF4444" />
+  </g>
+  
+  <!-- Travel route line -->
+  <path d="M25 150 Q50 140 90 125 Q130 140 155 150" 
+        stroke="#FFFFFF" stroke-width="4" opacity="0.8" fill="none" stroke-dasharray="6,3" />
+  
+  <!-- Decorative elements -->
+  <circle cx="30" cy="30" r="3" fill="#FBBF24" opacity="0.9" />
+  <circle cx="150" cy="30" r="3" fill="#FBBF24" opacity="0.9" />
+  <circle cx="30" cy="150" r="3" fill="#FBBF24" opacity="0.9" />
+  <circle cx="150" cy="150" r="3" fill="#FBBF24" opacity="0.9" />
+  
+  <!-- AI Text indicator -->
+  <text x="90" y="165" font-family="Arial, sans-serif" font-size="14" font-weight="bold" 
+        text-anchor="middle" fill="white" opacity="0.95">BonVoyage AI</text>
+  <text x="90" y="175" font-family="Arial, sans-serif" font-size="9" font-weight="normal" 
+        text-anchor="middle" fill="white" opacity="0.8">Smart Trip Planner</text>
 </svg>

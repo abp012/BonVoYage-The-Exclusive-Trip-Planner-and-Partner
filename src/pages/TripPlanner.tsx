@@ -5,15 +5,16 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
-import { MapPin, Calendar, Users, DollarSign, Utensils, Activity, Cloud, PackageCheck, ArrowLeft, Globe, Coins, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { MapPin, Calendar, Users, DollarSign, Utensils, Activity, Cloud, PackageCheck, ArrowLeft, Globe, Coins, Loader2, Plus, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { useUser } from "@clerk/clerk-react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import TripResults from "../components/TripResults";
-import UserMenu from "../components/UserMenu";
-import CreditDisplay from "../components/CreditDisplay";
+import Navbar from "../components/Navbar";
 import GooglePlacesSearch from "../components/GooglePlacesSearchFixed";
 import UltimateTripPlannerLoading from "../components/UltimateTripPlannerLoading";
 import { geminiService, ActivityOption } from "../services/geminiService";
@@ -30,15 +31,20 @@ const TripPlanner = () => {
   const [activities, setActivities] = useState<string[]>([]);  const [activityOptions, setActivityOptions] = useState<ActivityOption[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);  const [showResults, setShowResults] = useState(false);
   const [isGeneratingTrip, setIsGeneratingTrip] = useState(false);
-  const [loadingStep, setLoadingStep] = useState(0);
-  const [isTransitioning, setIsTransitioning] = useState(false); // New state for transition
-
+  const [loadingStep, setLoadingStep] = useState(0);  const [isTransitioning, setIsTransitioning] = useState(false); // New state for transition
+  const [generatedTripPlanId, setGeneratedTripPlanId] = useState<string | null>(null); // Store trip plan ID for rewards
+  const [isCreditDialogOpen, setIsCreditDialogOpen] = useState(false); // Credit purchase dialog state
   // Credit system hooks
   const credits = useQuery(
     api.users.getUserCredits,
     user ? { clerkId: user.id } : "skip"
   );
+  const isPremium = useQuery(
+    api.subscriptions.isPremiumUser,
+    user ? { clerkId: user.id } : "skip"
+  );
   const deductCredit = useMutation(api.users.deductCredit);
+  const addCredits = useMutation(api.users.addCredits);
   const createOrGetUser = useMutation(api.users.createOrGetUser);
   const sendTripEmail = useAction(api.emails.sendTripConfirmationEmail);
 
@@ -50,8 +56,33 @@ const TripPlanner = () => {
         email: user.primaryEmailAddress?.emailAddress || "",
         name: user.fullName || undefined,
       }).catch(console.error);
+    }  }, [user, createOrGetUser]);
+
+  // Credit purchase function
+  const handlePurchaseCredits = async (amount: number, description: string) => {
+    if (!user) return;
+    
+    try {
+      await addCredits({
+        clerkId: user.id,
+        amount,
+        description,
+      });
+      
+      toast.success(`Successfully purchased ${amount} credits!`);
+      setIsCreditDialogOpen(false);
+    } catch (error) {
+      console.error("Error purchasing credits:", error);
+      toast.error("Failed to purchase credits. Please try again.");
     }
-  }, [user, createOrGetUser]);
+  };
+
+  // Credit packages
+  const creditPackages = [
+    { amount: 5, price: "₹249", description: "Perfect for a few trips", popular: false },
+    { amount: 15, price: "₹649", description: "Great value for regular travelers", popular: true },
+    { amount: 30, price: "₹1,249", description: "Best for frequent trip planners", popular: false },
+  ];
 
   // Function to calculate end date from start date and days
   // Formula: End Date = Start Date + Number of Days - 1
@@ -142,10 +173,8 @@ const TripPlanner = () => {
       if (activities.length === 0) {
       toast.error("Please select at least one activity");
       return;
-    }
-
-    // Check if user has sufficient credits
-    if (credits === undefined || credits < 1) {
+    }    // Check if user has sufficient credits (skip for premium users)
+    if (!isPremium && (credits === undefined || credits < 1)) {
       toast.error("Insufficient credits! Please purchase more credits to generate a trip plan.");
       return;
     }
@@ -204,10 +233,15 @@ const TripPlanner = () => {
           travelWith: "general",
         },
         tripDetails,
-      });
-
-      if (result.success) {
-        toast.success(`Trip plan generated! You have ${result.remainingCredits} credits remaining 🎉`);
+      });      if (result.success) {
+        // Store the trip plan ID for rewards integration
+        setGeneratedTripPlanId(result.tripPlanId);
+        
+        if (result.isPremium) {
+          toast.success("Trip plan generated! Premium users get unlimited generations 🎉");
+        } else {
+          toast.success(`Trip plan generated! You have ${result.remainingCredits} credits remaining 🎉`);
+        }
 
         // Send confirmation email
         try {
@@ -277,38 +311,14 @@ const TripPlanner = () => {
     setIsGeneratingTrip(false);
     setIsTransitioning(false);
     setLoadingStep(0);
+    setGeneratedTripPlanId(null); // Reset trip plan ID
   };
-
   if (showResults) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    return (      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
         {/* Navigation */}
-        <nav className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center space-x-2">
-                <Link to="/" className="flex items-center space-x-2">
-                  <Globe className="h-8 w-8 text-blue-600" />
-                  <span className="text-2xl font-bold text-gray-900">JourneyCraft</span>
-                </Link>
-              </div>              <div className="flex items-center space-x-4">
-                <Button onClick={handleNewSearch} variant="outline">
-                  <PackageCheck className="mr-2 h-4 w-4" />
-                  New Trip
-                </Button>
-                <Link to="/">
-                  <Button variant="ghost">Home</Button>
-                </Link>
-                {isSignedIn && (
-                  <div className="flex items-center space-x-4">
-                    <CreditDisplay />
-                    <UserMenu />
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </nav>        <TripResults 
+        <Navbar />
+        
+        <TripResults
           tripData={{
             destination,
             days,
@@ -319,35 +329,16 @@ const TripPlanner = () => {
             activities,
             travelWith: "general"
           }}
+          tripPlanId={generatedTripPlanId}
           onReset={handleNewSearch}
         />
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    return (    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Navigation */}
-      <nav className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-2">
-              <Link to="/" className="flex items-center space-x-2">
-                <Globe className="h-8 w-8 text-blue-600" />
-                <span className="text-2xl font-bold text-gray-900">JourneyCraft</span>
-              </Link>
-            </div>            <div className="flex items-center space-x-4">
-              <Link to="/">
-                <Button variant="outline">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to Home
-                </Button>
-              </Link>
-              {isSignedIn && <UserMenu />}
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Navbar />
 
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
@@ -561,11 +552,12 @@ const TripPlanner = () => {
                   </Link>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
+                <div className="space-y-4">                  <div className="flex items-center justify-center space-x-2 text-sm text-gray-600">
                     <Coins className="h-4 w-4" />
                     <span>
-                      {credits !== undefined ? (
+                      {isPremium ? (
+                        "Premium Active • Unlimited trip generations"
+                      ) : credits !== undefined ? (
                         credits > 0 ? (
                           `You have ${credits} credit${credits === 1 ? '' : 's'} • 1 credit will be used for this trip`
                         ) : (
@@ -575,28 +567,92 @@ const TripPlanner = () => {
                         "Loading credits..."
                       )}
                     </span>
-                  </div>
-                  <Button 
-                    type="submit" 
-                    size="lg" 
-                    className="text-lg px-12 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                    disabled={credits === undefined || credits < 1}
-                  >
-                    <Cloud className="mr-2 h-5 w-5" />
-                    Create My Perfect Trip
-                    {credits !== undefined && credits < 1 && (
-                      <span className="ml-2 text-xs opacity-75">(Need Credits)</span>
-                    )}
-                  </Button>
+                  </div>                  {!isPremium && credits !== undefined && credits < 1 ? (
+                    <Button 
+                      size="lg" 
+                      className="text-lg px-12 py-3 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700"
+                      onClick={() => setIsCreditDialogOpen(true)}
+                    >
+                      <Coins className="mr-2 h-5 w-5" />
+                      Buy Credits to Continue
+                    </Button>
+                  ) : (
+                    <Button 
+                      type="submit" 
+                      size="lg" 
+                      className="text-lg px-12 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                      disabled={!isPremium && credits === undefined}
+                    >
+                      <Cloud className="mr-2 h-5 w-5" />
+                      Create My Perfect Trip
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
           </form>          {/* API Key Validator - Commented out for now */}
           {/* <div className="mt-12">
             <APIKeyValidator />
-          </div> */}
-        </div>
-      </div>      {/* Ultimate AI Trip Planner Loading Overlay */}
+          </div> */}        </div>
+      </div>
+
+      {/* Credit Purchase Dialog */}
+      <Dialog open={isCreditDialogOpen} onOpenChange={setIsCreditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Coins className="h-5 w-5 text-blue-600" />
+              <span>Purchase Credits</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="text-center">
+              <p className="text-sm text-gray-600 mb-4">
+                Each credit allows you to generate one complete trip plan. Choose the package that works best for you!
+              </p>
+            </div>
+            
+            <div className="grid gap-3">
+              {creditPackages.map((pkg, index) => (
+                <Card 
+                  key={index} 
+                  className={`cursor-pointer transition-all hover:shadow-md ${
+                    pkg.popular ? 'ring-2 ring-blue-500 relative' : ''
+                  }`}
+                  onClick={() => handlePurchaseCredits(pkg.amount, `Purchased ${pkg.amount} credits package`)}
+                >
+                  {pkg.popular && (
+                    <Badge 
+                      className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-blue-600"
+                    >
+                      Most Popular
+                    </Badge>
+                  )}
+                  <CardHeader className="pb-2">
+                    <div className="flex justify-between items-center">
+                      <CardTitle className="text-lg">{pkg.amount} Credits</CardTitle>
+                      <span className="text-xl font-bold text-blue-600">{pkg.price}</span>
+                    </div>
+                    <CardDescription>{pkg.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="flex items-center text-sm text-gray-600">
+                      <Check className="h-4 w-4 text-green-500 mr-2" />
+                      Generate {pkg.amount} complete trip plans
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            
+            <div className="text-center text-xs text-gray-500 mt-4">
+              * This is a demo. No actual payment processing.
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Ultimate AI Trip Planner Loading Overlay */}
       <UltimateTripPlannerLoading 
         currentStep={loadingStep} 
         isVisible={isGeneratingTrip || isTransitioning}

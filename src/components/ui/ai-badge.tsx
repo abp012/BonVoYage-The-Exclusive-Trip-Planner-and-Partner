@@ -18,6 +18,10 @@ export const AIBadge: React.FC<AIBadgeProps> = ({
   showIcon = true,
   label = 'AI Generated'
 }) => {
+  // AI badges hidden as requested
+  return null;
+  
+  /* Original AIBadge implementation commented out
   const sizeClasses = {
     sm: 'text-xs px-2 py-1',
     md: 'text-sm px-3 py-1.5',
@@ -43,6 +47,7 @@ export const AIBadge: React.FC<AIBadgeProps> = ({
       {label}
     </Badge>
   );
+  */
 };
 
 interface AIContentWrapperProps {
@@ -83,11 +88,12 @@ export const AIContentWrapper: React.FC<AIContentWrapperProps> = ({
   return (
     <div className={cn('relative', className)}>
       {children}
-      {isAI && (
+      {/* AI badges hidden as requested */}
+      {/* isAI && (
         <div className={cn('absolute z-10', positionClasses[badgePosition])}>
           <AIBadge />
         </div>
-      )}
+      ) */}
     </div>
   );
 };

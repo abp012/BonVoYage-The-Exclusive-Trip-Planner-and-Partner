@@ -5,13 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { 
-  MapPin, 
-  Calendar, 
+  MapPin,   Calendar, 
   Users, 
   DollarSign, 
   Activity, 
   Clock,
   Download,
+  Printer,
   Share,
   Star,
   Utensils,
@@ -96,6 +96,181 @@ const TripDetailsModal: React.FC<TripDetailsModalProps> = ({ trip, isOpen, onClo
       month: 'long',
       day: 'numeric'
     });
+  };
+
+  const handleExportPDF = async (trip: Trip) => {
+    try {
+      // Create a printable version of the trip details
+      const printWindow = window.open('', '_blank');      if (!printWindow) {
+        alert('Please allow popups for this site to print');
+        return;
+      }
+      
+      const tripData = {
+        destination: trip.destination,
+        days: trip.days,
+        people: trip.people,
+        budget: trip.budget,
+        activities: trip.activities,
+        travelWith: trip.travelWith,
+        startDate: trip.startDate,
+        endDate: trip.endDate,
+        createdAt: trip.createdAt,
+        tripDetails: trip.tripDetails
+      };
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Trip to ${trip.destination}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+            .header { background: linear-gradient(135deg, #3B82F6, #6366F1); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+            .section { margin-bottom: 20px; padding: 15px; border: 1px solid #e5e7eb; border-radius: 8px; }
+            .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+            .stat { background: #f8fafc; padding: 10px; border-radius: 6px; }
+            .day-item { background: #f1f5f9; padding: 10px; margin: 5px 0; border-radius: 6px; }
+            .activity-item { background: #ede9fe; padding: 8px; margin: 3px 0; border-radius: 4px; }
+            h1, h2 { color: #1f2937; }
+            h3 { color: #374151; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🌍 Trip to ${trip.destination}</h1>
+            <div class="grid">
+              <div><strong>Duration:</strong> ${trip.days} days</div>
+              <div><strong>Travelers:</strong> ${trip.people} people</div>
+              <div><strong>Budget:</strong> ₹${trip.budget.toLocaleString()}</div>
+              <div><strong>Style:</strong> ${trip.travelWith}</div>
+            </div>
+          </div>
+          
+          <div class="section">
+            <h2>📅 Travel Dates</h2>
+            <div class="grid">
+              <div><strong>Start Date:</strong> ${formatDateOnly(trip.startDate)}</div>
+              <div><strong>End Date:</strong> ${formatDateOnly(trip.endDate)}</div>
+              <div><strong>Generated:</strong> ${formatDate(trip.createdAt)}</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>🗺️ About ${trip.destination}</h2>
+            <p>${trip.tripDetails?.cityDescription || `${trip.destination} is a remarkable destination that offers visitors a unique blend of cultural heritage, natural beauty, and authentic experiences.`}</p>
+          </div>
+
+          <div class="section">
+            <h2>🎯 Selected Activities</h2>
+            <div class="grid">
+              ${trip.activities.map(activity => `<div class="activity-item">• ${activity}</div>`).join('')}
+            </div>
+          </div>
+
+          ${trip.tripDetails?.detailedItinerary ? `
+          <div class="section">
+            <h2>📋 Detailed Itinerary</h2>
+            ${trip.tripDetails.detailedItinerary.map(day => `
+              <div class="day-item">
+                <h3>${day.title}</h3>
+                <p><strong>Morning:</strong> ${day.morning}</p>
+                <p><strong>Afternoon:</strong> ${day.afternoon}</p>
+                <p><strong>Evening:</strong> ${day.evening}</p>
+              </div>
+            `).join('')}
+          </div>
+          ` : ''}
+
+          ${trip.tripDetails?.packingList ? `
+          <div class="section">
+            <h2>🧳 Packing List</h2>
+            <div class="grid">
+              ${trip.tripDetails.packingList.map(item => `<div>• ${item}</div>`).join('')}
+            </div>
+          </div>
+          ` : ''}
+
+          <div class="section">
+            <h2>💡 Travel Tips</h2>
+            ${trip.tripDetails?.travelTips?.map(tip => `
+              <div class="day-item">
+                <strong>${tip.category}: ${tip.title}</strong>
+                <p>${tip.description}</p>
+              </div>
+            `).join('') || '<p>Research local customs and prepare accordingly for your trip.</p>'}
+          </div>
+
+          <footer style="text-align: center; margin-top: 30px; color: #6b7280; font-size: 14px;">
+            Generated by BonVoyage AI Trip Planner
+          </footer>
+        </body>
+        </html>
+      `);
+      
+      printWindow.document.close();
+      
+      // Wait for content to load, then print
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 1000);
+        } catch (error) {
+      console.error('Error printing:', error);
+      alert('Failed to print. Please try again.');
+    }
+  };
+
+  const handleShareTrip = async (trip: Trip) => {
+    try {
+      const shareText = `Check out my trip plan to ${trip.destination}! 
+🌍 Destination: ${trip.destination}
+📅 Duration: ${trip.days} days
+👥 Travelers: ${trip.people} people
+💰 Budget: ₹${trip.budget.toLocaleString()}
+🎯 Activities: ${trip.activities.join(', ')}
+
+Generated with BonVoyage AI Trip Planner`;
+
+      if (navigator.share) {
+        // Use native share API if available
+        await navigator.share({
+          title: `My Trip to ${trip.destination}`,
+          text: shareText,
+          url: window.location.href
+        });
+      } else {
+        // Fallback to clipboard
+        await navigator.clipboard.writeText(shareText);
+        alert('Trip details copied to clipboard! You can now paste and share it anywhere.');
+      }
+    } catch (error) {
+      console.error('Error sharing trip:', error);
+      
+      // Final fallback - create a text area and copy
+      try {
+        const shareText = `Check out my trip plan to ${trip.destination}! 
+🌍 Destination: ${trip.destination}
+📅 Duration: ${trip.days} days
+👥 Travelers: ${trip.people} people
+💰 Budget: ₹${trip.budget.toLocaleString()}
+🎯 Activities: ${trip.activities.join(', ')}
+
+Generated with BonVoyage AI Trip Planner`;
+
+        const textArea = document.createElement('textarea');
+        textArea.value = shareText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        alert('Trip details copied to clipboard!');
+      } catch (fallbackError) {
+        console.error('Fallback copy failed:', fallbackError);
+        alert('Unable to share trip. Please try again.');
+      }
+    }
   };
 
   const getActivityIcon = (activity: string) => {
@@ -463,21 +638,22 @@ const TripDetailsModal: React.FC<TripDetailsModalProps> = ({ trip, isOpen, onClo
                 ))}
               </div>
             </CardContent>
-          </Card>
-
-          {/* Action Buttons */}
-          <div className="flex flex-wrap justify-center gap-4 pt-6">
-            <Button variant="outline" className="flex items-center space-x-2">
-              <Download className="h-4 w-4" />
-              <span>Export PDF</span>
+          </Card>          {/* Action Buttons */}
+          <div className="flex flex-wrap justify-center gap-4 pt-6">            <Button 
+              variant="outline" 
+              className="flex items-center space-x-2"
+              onClick={() => handleExportPDF(trip)}
+            >
+              <Printer className="h-4 w-4" />
+              <span>Print</span>
             </Button>
-            <Button variant="outline" className="flex items-center space-x-2">
+            <Button 
+              variant="outline" 
+              className="flex items-center space-x-2"
+              onClick={() => handleShareTrip(trip)}
+            >
               <Share className="h-4 w-4" />
               <span>Share Trip</span>
-            </Button>
-            <Button className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700">
-              <Plane className="h-4 w-4" />
-              <span>Start Planning</span>
             </Button>
           </div>
         </div>

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { MapPin, Calendar, Users, DollarSign, Utensils, Activity, PackageCheck, ArrowLeft, Trash2, Plus, Sunrise, Sun, Sunset, Clock, MapIcon, Star, MessageSquare, Send, Sparkles, Loader2, ChevronDown, ChevronUp, Info, Timer, IndianRupee } from "lucide-react";
+import { MapPin, Calendar, Users, DollarSign, Utensils, Activity, PackageCheck, ArrowLeft, Trash2, Plus, Sunrise, Sun, Sunset, Clock, MapIcon, Star, MessageSquare, Send, Sparkles, Loader2, ChevronDown, ChevronUp, Info, Timer, IndianRupee, Hotel, Building2 } from "lucide-react";
 import WeatherWidget from './WeatherWidget';
 import PlacesMap from './PlacesMap';
 import { useMutation, useQuery } from "convex/react";
@@ -59,10 +59,11 @@ interface TripData {
 
 interface TripResultsProps {
   tripData: TripData;
+  tripPlanId?: string | null; // Optional trip plan ID for rewards
   onReset: () => void;
 }
 
-const TripResults = ({ tripData, onReset }: TripResultsProps) => {
+const TripResults = ({ tripData, tripPlanId, onReset }: TripResultsProps) => {
   const { destination, days, startDate, endDate, people, budget, activities, travelWith } = tripData;
   const { user } = useUser();
 
@@ -114,6 +115,14 @@ const TripResults = ({ tripData, onReset }: TripResultsProps) => {
   const [selectedPlace, setSelectedPlace] = useState<EnhancedPlace | null>(null);
   const [expandedPlaceId, setExpandedPlaceId] = useState<string | null>(null);
 
+  // Content switcher state for Places/Hotels toggle
+  const [activeContentTab, setActiveContentTab] = useState<'places' | 'hotels'>('places');
+
+  // State for hotels and restaurants
+  const [hotelsAndRestaurants, setHotelsAndRestaurants] = useState<EnhancedPlace[]>([]);
+  const [selectedHotelRestaurant, setSelectedHotelRestaurant] = useState<EnhancedPlace | null>(null);
+  const [loadingHotelsRestaurants, setLoadingHotelsRestaurants] = useState(false);
+
   // Active section tracking for navigation
   const [activeSection, setActiveSection] = useState<string>('destination-image');
 
@@ -131,7 +140,34 @@ const TripResults = ({ tripData, onReset }: TripResultsProps) => {
 
   // Convex mutations and queries
   const submitFeedback = useMutation(api.feedback.submitFeedback);
+  const awardFeedbackPoints = useMutation(api.users.awardFeedbackPoints);
   const destinationFeedback = useQuery(api.feedback.getFeedbackByDestination, { destination });
+  
+  // Check if user has already been rewarded for this trip plan
+  const hasBeenRewarded = useQuery(
+    api.users.hasUserBeenRewardedForTrip,
+    user && tripPlanId ? { 
+      clerkId: user.id, 
+      tripPlanId: tripPlanId as any 
+    } : "skip"
+  );
+
+  // Check if user has premium subscription
+  const isPremiumUser = useQuery(
+    api.subscriptions.isPremiumUser,
+    user ? { clerkId: user.id } : "skip"
+  );
+
+  // Auto-populate user data when component mounts
+  useEffect(() => {
+    if (user) {
+      setFeedbackForm(prev => ({
+        ...prev,
+        name: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || '',
+        email: user.primaryEmailAddress?.emailAddress || ''
+      }));
+    }
+  }, [user]);
 
   // Scroll to top when component mounts to ensure proper display
   useEffect(() => {
@@ -149,6 +185,18 @@ const TripResults = ({ tripData, onReset }: TripResultsProps) => {
     const handleScroll = () => {
       const sections = ['destination-image', 'about', 'activities', 'weather', 'places', 'cuisine', 'itinerary', 'packing', 'best-time', 'testimonials', 'feedback'];
       const navbarHeight = 64 + 32; // navbar height + offset
+      
+      // Check if we're near the bottom of the page
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const isNearBottom = windowHeight + scrollTop >= documentHeight - 100; // 100px threshold
+      
+      // If near bottom, always highlight the last section (feedback)
+      if (isNearBottom) {
+        setActiveSection('feedback');
+        return;
+      }
       
       for (const sectionId of sections) {
         const element = document.getElementById(sectionId);
@@ -246,13 +294,15 @@ const TripResults = ({ tripData, onReset }: TripResultsProps) => {
   const handleFeedbackSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!feedbackForm.name.trim()) {
-      toast.error("Please enter your name");
+    // Check if user has already been rewarded for this trip plan (non-premium users only)
+    if (tripPlanId && user && hasBeenRewarded && !isPremiumUser) {
+      toast.error("You have already submitted feedback for this trip plan and received your reward points.");
       return;
     }
-
-    if (!feedbackForm.email.trim()) {
-      toast.error("Please enter your email");
+    
+    // Check if user data is available (auto-populated)
+    if (!feedbackForm.name.trim() || !feedbackForm.email.trim()) {
+      toast.error("Please sign in to submit feedback");
       return;
     }
 
@@ -274,7 +324,7 @@ const TripResults = ({ tripData, onReset }: TripResultsProps) => {
     setIsSubmittingFeedback(true);
     
     try {
-      await submitFeedback({
+      const result = await submitFeedback({
         name: feedbackForm.name.trim(),
         email: feedbackForm.email.trim(),
         fromWhere: feedbackForm.fromWhere.trim(),
@@ -282,18 +332,56 @@ const TripResults = ({ tripData, onReset }: TripResultsProps) => {
         rating: feedbackForm.rating,
         destination: destination,
         clerkUserId: user?.id || undefined,
+        tripPlanId: tripPlanId as any || undefined, // Include trip plan ID if available
       });
 
-      toast.success("Thank you for your feedback! 🎉");
-      
-      // Reset form
-      setFeedbackForm({
-        name: '',
-        email: '',
-        fromWhere: '',
-        comments: '',
-        rating: 0
-      });
+      if (result.success) {
+        toast.success("Thank you for your feedback! 🎉");
+        
+        // Award reward points if tripPlanId is available and user is authenticated
+        if (tripPlanId && user && result.feedbackId) {
+          try {
+            const rewardResult = await awardFeedbackPoints({
+              clerkId: user.id,
+              tripPlanId: tripPlanId as any, // Type conversion for Convex ID
+              feedbackId: result.feedbackId as any, // Type conversion for Convex ID
+            });
+            
+            if (rewardResult.success) {
+              toast.success(
+                `🎉 Congratulations! You earned ${rewardResult.pointsAwarded} reward points for your feedback!`,
+                { duration: 5000 }
+              );
+              toast.info(
+                `💰 You now have ${rewardResult.totalPoints} total reward points. Redeem them for credits in the Rewards page!`,
+                { duration: 5000 }
+              );
+            } else if (rewardResult.message) {
+              // Check if this is a premium user restriction message
+              if (rewardResult.message.includes("Premium subscribers do not receive reward points")) {
+                toast.info(
+                  "👑 As a premium subscriber, you enjoy unlimited access without needing reward points. Thank you for your valuable feedback!",
+                  { duration: 4000 }
+                );
+              } else {
+                toast.info(rewardResult.message, { duration: 4000 });
+              }
+            }
+          } catch (rewardError) {
+            console.error("Error awarding reward points:", rewardError);
+            // Don't show error to user since feedback was still successful
+          }
+        }
+        
+        // Reset form
+        setFeedbackForm({
+          name: '',
+          email: '',
+          fromWhere: '',
+          comments: '',
+          rating: 0
+        });
+      }
     } catch (error) {
       console.error("Error submitting feedback:", error);
       toast.error("Failed to submit feedback. Please try again.");
@@ -408,6 +496,22 @@ const TripResults = ({ tripData, onReset }: TripResultsProps) => {
     setSelectedPlace(place);
   };
 
+  // Handle hotel/restaurant click for map zoom
+  const handleHotelRestaurantClick = (place: EnhancedPlace) => {
+    setSelectedHotelRestaurant(place);
+  };
+
+  // Handle content tab switching
+  const handleContentTabSwitch = (tab: 'places' | 'hotels') => {
+    setActiveContentTab(tab);
+    // Clear selections when switching tabs
+    if (tab === 'places') {
+      setSelectedHotelRestaurant(null);
+    } else {
+      setSelectedPlace(null);
+    }
+  };
+
   // Toggle day expansion for itinerary
   const toggleDayExpansion = (dayNumber: number) => {
     setExpandedDays(prev => {
@@ -511,6 +615,58 @@ const TripResults = ({ tripData, onReset }: TripResultsProps) => {
       setSelectedPlaces(enhancedPlaces.slice(0, Math.min(6, enhancedPlaces.length)));
     }
   }, [enhancedPlaces, selectedPlaces.length]);
+
+  // Fetch hotels and restaurants when destination coordinates are available
+  useEffect(() => {
+    const fetchHotelsAndRestaurants = async () => {
+      if (!destinationCoordinates || coordinatesLoading) return;
+
+      setLoadingHotelsRestaurants(true);
+      try {
+        // Fetch both hotels and restaurants
+        const [hotelsPromise, restaurantsPromise] = await Promise.allSettled([
+          googleMapsService.getNearbyPlaces(destinationCoordinates, 'lodging', 5000),
+          googleMapsService.getNearbyPlaces(destinationCoordinates, 'restaurant', 5000)
+        ]);
+
+        const hotels = hotelsPromise.status === 'fulfilled' ? hotelsPromise.value : [];
+        const restaurants = restaurantsPromise.status === 'fulfilled' ? restaurantsPromise.value : [];
+
+        // Convert to EnhancedPlace format
+        const convertToEnhancedPlace = (place: any, type: 'hotel' | 'restaurant'): EnhancedPlace => ({
+          id: place.placeId || `${type}-${Math.random()}`,
+          name: place.name,
+          description: `${type === 'hotel' ? 'Hotel' : 'Restaurant'} • ${place.vicinity || place.address}`,
+          coordinates: place.coordinates,
+          category: type === 'hotel' ? 'Accommodation' : 'Dining',
+          imageUrl: place.photoUrl || `/placeholder.svg`,
+          aiData: {
+            highlights: place.rating ? [`Rating: ${place.rating.toFixed(1)} stars`] : [],
+            bestTimeToVisit: type === 'hotel' ? 'Check-in after 3 PM' : 'Peak hours: 7-9 PM',
+            entryFee: place.priceLevel ? `Price level: ${place.priceLevel}/4` : 'Price varies',
+            duration: type === 'hotel' ? 'Overnight stay' : '1-2 hours',
+            nearbyAttractions: ['Located in city center'],
+            localTips: [place.address || 'Contact for more details']
+          }
+        });
+
+        // Combine and limit results
+        const combinedResults = [
+          ...hotels.slice(0, 5).map(hotel => convertToEnhancedPlace(hotel, 'hotel')),
+          ...restaurants.slice(0, 5).map(restaurant => convertToEnhancedPlace(restaurant, 'restaurant'))
+        ];
+
+        setHotelsAndRestaurants(combinedResults);
+      } catch (error) {
+        console.error('Error fetching hotels and restaurants:', error);
+        setHotelsAndRestaurants([]);
+      } finally {
+        setLoadingHotelsRestaurants(false);
+      }
+    };
+
+    fetchHotelsAndRestaurants();
+  }, [destinationCoordinates, coordinatesLoading]);
 
   // Generate date range for the trip using user-selected dates or fallback
   const generateDateRange = () => {
@@ -938,9 +1094,9 @@ Whether you're interested in exploring museums and galleries, experiencing night
                 { id: 'places', label: 'Places to Visit', icon: '🗺️' },
                 { id: 'cuisine', label: 'Local Cuisine', icon: '🍽️' },
                 { id: 'itinerary', label: 'Day Itinerary', icon: '📅' },
-                { id: 'packing', label: 'Packing List', icon: '🧳' },
+                { id: 'packing', label: 'Packing Checklist', icon: '🧳' },
                 { id: 'best-time', label: 'Best Time to Visit', icon: '🗓️' },
-                { id: 'testimonials', label: 'User Reviews', icon: '⭐' },
+                { id: 'testimonials', label: 'Shared Experiences', icon: '⭐' },
                 { id: 'feedback', label: 'Share Feedback', icon: '💬' }
               ].map((item) => (
                 <button
@@ -1054,8 +1210,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                 {geminiData.isLoading && (
                   <LoadingSpinner size="sm" />
                 )}
+                {/* AI Badge hidden as requested */}
                 {geminiData.destinationInfo && !geminiData.isLoading && (
-                  <AIBadge label="AI Enhanced" />
+                  // <AIBadge label="AI Enhanced" />
+                  null
                 )}
               </CardTitle>
             </CardHeader>
@@ -1093,8 +1251,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                   <LoadingSpinner size="sm" />
                 )}
                 {/* Note: Activities are generated from destination info rather than separate property */}
+                {/* AI Badge hidden as requested */}
                 {geminiData.destinationInfo && !geminiData.isLoading && (
-                  <AIBadge label="AI Enhanced" />
+                  // <AIBadge label="AI Enhanced" />
+                  null
                 )}
               </CardTitle>
             </CardHeader>
@@ -1113,9 +1273,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                         {index + 1}
                       </span>
                       <span className="text-gray-700 flex-1">{activity}</span>
-                      {/* AI badge when destination info is available */}
+                      {/* AI badge when destination info is available - Hidden as requested */}
                       {geminiData.destinationInfo && (
-                        <AIBadge size="sm" className="absolute -top-1 -right-1" />
+                        // <AIBadge size="sm" className="absolute -top-1 -right-1" />
+                        null
                       )}
                     </div>
                   ))}
@@ -1143,8 +1304,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                 {geminiData.isLoading && (
                   <LoadingSpinner size="sm" />
                 )}
+                {/* AI Badge hidden as requested */}
                 {geminiData.weatherAdvice && !geminiData.isLoading && (
-                  <AIBadge label="AI Enhanced" />
+                  // <AIBadge label="AI Enhanced" />
+                  null
                 )}
               </CardTitle>
             </CardHeader>
@@ -1190,261 +1353,403 @@ Whether you're interested in exploring museums and galleries, experiencing night
             </CardContent>
           </Card>
 
-          {/* Top Places to Visit - Interactive Section */}
+          {/* Places & Hotels Content Switcher */}
           <Card id="places" className="shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MapPin className="h-5 w-5 text-green-600" />
-                Top Places to Visit
-                {geminiData.isLoading && (
+                Explore {destination}
+                {(geminiData.isLoading || loadingHotelsRestaurants) && (
                   <LoadingSpinner size="sm" />
                 )}
-                {geminiData.placesDetails && geminiData.placesDetails.length > 0 && !geminiData.isLoading && (
-                  <AIBadge label="AI Enhanced" />
-                )}
               </CardTitle>
+              
+              {/* Content Toggle Buttons */}
+              <div className="flex gap-2 mt-4">
+                <Button
+                  variant={activeContentTab === 'places' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleContentTabSwitch('places')}
+                  className="flex items-center gap-2"
+                >
+                  🏞️ Top Places
+                </Button>
+                <Button
+                  variant={activeContentTab === 'hotels' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleContentTabSwitch('hotels')}
+                  className="flex items-center gap-2"
+                >
+                  🏨 Hotels & Restaurants
+                </Button>
+              </div>
             </CardHeader>
-          <CardContent>
-            <AIContentWrapper
-              isLoading={geminiData.isLoading}
-              isAI={!!(geminiData.placesDetails && geminiData.placesDetails.length > 0)}
-              loadingText="Discovering amazing places..."
-              badgePosition="top-right"
-            >
-              <div className="grid lg:grid-cols-2 gap-6">
-              {/* Left Side - Places List */}
-              <div className="space-y-4">
-                {/* Places List */}
-                <div className="space-y-3">
-                  <h4 className="font-medium text-gray-700">
-                    Top Places in {destination} ({selectedPlaces.length})
-                  </h4>
-                  {selectedPlaces.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <MapPin className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                      <p>No places available for this destination</p>
-                      <p className="text-sm">Search and add custom places to see them on the map</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {selectedPlaces.map((place, index) => (
-                        <div 
-                          key={place.id} 
-                          className={`border rounded-lg transition-all ${
-                            selectedPlace?.id === place.id 
-                              ? 'bg-green-50 border-green-200 shadow-sm' 
-                              : 'bg-white border-gray-200 hover:bg-gray-50'
-                          }`}
-                        >
-                          {/* Main Place Card */}
-                          <div 
-                            className="flex items-center gap-3 p-3 cursor-pointer"
-                            onClick={() => handlePlaceClick(place)}
-                          >
-                            {/* Sequential Number */}
-                            <div className="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-semibold text-sm">
-                              {index + 1}
-                            </div>
-                            
-                            {/* Place Info */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <h5 className="font-medium text-gray-900 truncate">{place.name}</h5>
-                                {place.aiData && (
-                                  <AIBadge size="sm" label="AI" />
-                                )}
-                              </div>
-                              <p className="text-sm text-gray-600 truncate">{place.description}</p>
-                              <Badge variant="outline" className="text-xs mt-1">
-                                {place.category}
-                              </Badge>
-                            </div>
-                            
-                            {/* Action Buttons */}
-                            <div className="flex items-center gap-1">
-                              {/* Expand/Collapse Button for AI places */}
-                              {place.aiData && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedPlaceId(expandedPlaceId === place.id ? null : place.id);
-                                  }}
-                                  className="flex-shrink-0 h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                >
-                                  {expandedPlaceId === place.id ? (
-                                    <ChevronUp className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronDown className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              )}
-                              
-                              {/* Delete Button */}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removePlace(place.id);
-                                }}
-                                className="flex-shrink-0 h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
+
+            <CardContent>
+              {activeContentTab === 'places' ? (
+                /* Places Tab Content */
+                <AIContentWrapper
+                  isLoading={geminiData.isLoading}
+                  isAI={!!(geminiData.placesDetails && geminiData.placesDetails.length > 0)}
+                  loadingText="Discovering amazing places..."
+                  badgePosition="top-right"
+                >
+                  <div className="grid lg:grid-cols-2 gap-6">
+                    {/* Left Side - Places List */}
+                    <div className="space-y-4">
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-gray-700">
+                          Top Places in {destination} ({selectedPlaces.length})
+                        </h4>
+                        {selectedPlaces.length === 0 ? (
+                          <div className="text-center py-8 text-gray-500">
+                            <MapPin className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                            <p>No places available for this destination</p>
+                            <p className="text-sm">Search and add custom places to see them on the map</p>
                           </div>
-
-                          {/* AI Details Expansion */}
-                          {place.aiData && expandedPlaceId === place.id && (
-                            <div className="px-3 pb-3 border-t border-gray-100 bg-blue-50/30">
-                              <div className="pt-3 space-y-3 text-sm">
-                                {/* Highlights */}
-                                {place.aiData.highlights && place.aiData.highlights.length > 0 && (
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <Star className="h-4 w-4 text-yellow-500" />
-                                      <span className="font-medium text-gray-700">Highlights</span>
-                                    </div>
-                                    <ul className="list-disc list-inside space-y-1 ml-6 text-gray-600">
-                                      {place.aiData.highlights.slice(0, 3).map((highlight, idx) => (
-                                        <li key={idx} className="text-xs">{highlight}</li>
-                                      ))}
-                                    </ul>
+                        ) : (
+                          <div className="space-y-2 max-h-96 overflow-y-auto">
+                            {selectedPlaces.map((place, index) => (
+                              <div 
+                                key={place.id} 
+                                className={`border rounded-lg transition-all ${
+                                  selectedPlace?.id === place.id 
+                                    ? 'bg-green-50 border-green-200 shadow-sm' 
+                                    : 'bg-white border-gray-200 hover:bg-gray-50'
+                                }`}
+                              >
+                                {/* Main Place Card */}
+                                <div 
+                                  className="flex items-center gap-3 p-3 cursor-pointer"
+                                  onClick={() => handlePlaceClick(place)}
+                                >
+                                  {/* Sequential Number */}
+                                  <div className="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-semibold text-sm">
+                                    {index + 1}
                                   </div>
-                                )}
-
-                                {/* Quick Info Grid */}
-                                <div className="grid grid-cols-2 gap-3">
-                                  {/* Entry Fee */}
-                                  {place.aiData.entryFee && (
+                                  
+                                  {/* Place Info */}
+                                  <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                      <IndianRupee className="h-3 w-3 text-green-600" />
-                                      <span className="text-xs text-gray-600">
-                                        <span className="font-medium">Fee:</span> {place.aiData.entryFee}
-                                      </span>
+                                      <h5 className="font-medium text-gray-900 truncate">{place.name}</h5>
                                     </div>
-                                  )}
-
-                                  {/* Duration */}
-                                  {place.aiData.duration && (
-                                    <div className="flex items-center gap-2">
-                                      <Timer className="h-3 w-3 text-blue-600" />
-                                      <span className="text-xs text-gray-600">
-                                        <span className="font-medium">Duration:</span> {place.aiData.duration}
-                                      </span>
-                                    </div>
-                                  )}
+                                    <p className="text-sm text-gray-600 truncate">{place.description}</p>
+                                    <Badge variant="outline" className="text-xs mt-1">
+                                      {place.category}
+                                    </Badge>
+                                  </div>
+                                  
+                                  {/* Action Buttons */}
+                                  <div className="flex items-center gap-1">
+                                    {/* Expand/Collapse Button for AI places */}
+                                    {place.aiData && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedPlaceId(expandedPlaceId === place.id ? null : place.id);
+                                        }}
+                                        className="flex-shrink-0 h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                      >
+                                        {expandedPlaceId === place.id ? (
+                                          <ChevronUp className="h-4 w-4" />
+                                        ) : (
+                                          <ChevronDown className="h-4 w-4" />
+                                        )}
+                                      </Button>
+                                    )}
+                                    
+                                    {/* Delete Button */}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        removePlace(place.id);
+                                      }}
+                                      className="flex-shrink-0 h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
                                 </div>
 
-                                {/* Best Time to Visit */}
-                                {place.aiData.bestTimeToVisit && (
-                                  <div className="flex items-center gap-2">
-                                    <Calendar className="h-3 w-3 text-purple-600" />
-                                    <span className="text-xs text-gray-600">
-                                      <span className="font-medium">Best Time:</span> {place.aiData.bestTimeToVisit}
-                                    </span>
-                                  </div>
-                                )}
+                                {/* AI Details Expansion */}
+                                {place.aiData && expandedPlaceId === place.id && (
+                                  <div className="px-3 pb-3 border-t border-gray-100 bg-blue-50/30">
+                                    <div className="pt-3 space-y-3 text-sm">
+                                      {/* Highlights */}
+                                      {place.aiData.highlights && place.aiData.highlights.length > 0 && (
+                                        <div>
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <Star className="h-4 w-4 text-yellow-500" />
+                                            <span className="font-medium text-gray-700">Highlights</span>
+                                          </div>
+                                          <ul className="list-disc list-inside space-y-1 ml-6 text-gray-600">
+                                            {place.aiData.highlights.slice(0, 3).map((highlight, idx) => (
+                                              <li key={idx} className="text-xs">{highlight}</li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      )}
 
-                                {/* Local Tips */}
-                                {place.aiData.localTips && place.aiData.localTips.length > 0 && (
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <Info className="h-4 w-4 text-orange-500" />
-                                      <span className="font-medium text-gray-700">Pro Tips</span>
-                                    </div>
-                                    <div className="ml-6 text-xs text-gray-600">
-                                      {place.aiData.localTips[0]}
+                                      {/* Quick Info Grid */}
+                                      <div className="grid grid-cols-2 gap-3">
+                                        {/* Entry Fee */}
+                                        {place.aiData.entryFee && (
+                                          <div className="flex items-center gap-2">
+                                            <IndianRupee className="h-3 w-3 text-green-600" />
+                                            <span className="text-xs text-gray-600">
+                                              <span className="font-medium">Fee:</span> {place.aiData.entryFee}
+                                            </span>
+                                          </div>
+                                        )}
+
+                                        {/* Duration */}
+                                        {place.aiData.duration && (
+                                          <div className="flex items-center gap-2">
+                                            <Timer className="h-3 w-3 text-blue-600" />
+                                            <span className="text-xs text-gray-600">
+                                              <span className="font-medium">Duration:</span> {place.aiData.duration}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* Best Time to Visit */}
+                                      {place.aiData.bestTimeToVisit && (
+                                        <div className="flex items-center gap-2">
+                                          <Calendar className="h-3 w-3 text-purple-600" />
+                                          <span className="text-xs text-gray-600">
+                                            <span className="font-medium">Best Time:</span> {place.aiData.bestTimeToVisit}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Local Tips */}
+                                      {place.aiData.localTips && place.aiData.localTips.length > 0 && (
+                                        <div>
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <Info className="h-4 w-4 text-orange-500" />
+                                            <span className="font-medium text-gray-700">Pro Tips</span>
+                                          </div>
+                                          <div className="ml-6 text-xs text-gray-600">
+                                            {place.aiData.localTips[0]}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 )}
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
-                {/* Quick Add More Places */}
-                {enhancedPlaces.length > selectedPlaces.length && (
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-gray-700">Add More Places</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {enhancedPlaces
-                        .filter(place => {
-                          // Check if place is already selected by ID
-                          const isSelectedById = selectedPlaces.some(selected => selected.id === place.id);
-                          
-                          // Check if place is already selected by name (case-insensitive)
-                          const isSelectedByName = selectedPlaces.some(selected => 
-                            selected.name.toLowerCase().trim() === place.name.toLowerCase().trim()
-                          );
-                          
-                          // Return false if place is already selected by either ID or name
-                          return !isSelectedById && !isSelectedByName;
-                        })
-                        .slice(0, 6)
-                        .map((place) => (
-                        <Button
-                          key={place.id}
-                          variant="outline"
-                          size="sm"
-                          onClick={async () => {
-                            try {
-                              await addPlace(place.name);
-                            } catch (error) {
-                              console.error('Failed to add place:', error);
-                              toast.error('Failed to add place. Please try again.');
-                            }
-                          }}
-                          className="text-xs"
-                        >
-                          <Plus className="h-3 w-3 mr-1" />
-                          {place.name}
-                        </Button>
-                      ))}
+                      {/* Quick Add More Places */}
+                      {enhancedPlaces.length > selectedPlaces.length && (
+                        <div className="space-y-2">
+                          <h4 className="font-medium text-gray-700">Add More Places</h4>
+                          <div className="flex flex-wrap gap-2">
+                            {enhancedPlaces
+                              .filter(place => {
+                                const isSelectedById = selectedPlaces.some(selected => selected.id === place.id);
+                                const isSelectedByName = selectedPlaces.some(selected => 
+                                  selected.name.toLowerCase().trim() === place.name.toLowerCase().trim()
+                                );
+                                return !isSelectedById && !isSelectedByName;
+                              })
+                              .slice(0, 6)
+                              .map((place) => (
+                              <Button
+                                key={place.id}
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    await addPlace(place.name);
+                                  } catch (error) {
+                                    console.error('Failed to add place:', error);
+                                    toast.error('Failed to add place. Please try again.');
+                                  }
+                                }}
+                                className="text-xs"
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                {place.name}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right Side - Interactive Map */}
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-semibold text-gray-800">Places Map</h3>
+                      <div className="bg-gray-100 rounded-lg overflow-hidden">
+                        <PlacesMap
+                          destination={destination}
+                          center={destinationCoordinates || { lat: 28.6139, lng: 77.2090 }}
+                          className="w-full h-96 rounded-lg"
+                          selectedPlaces={selectedPlaces}
+                          selectedPlace={selectedPlace}
+                          onPlaceClick={handlePlaceClick}
+                        />
+                      </div>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <p>• Click on places in the list to zoom to their location</p>
+                        <p>• Click on map markers to see place details</p>
+                        <p>• Use map controls to switch between Map/Satellite view</p>
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
+                </AIContentWrapper>
+              ) : (
+                /* Hotels & Restaurants Tab Content */
+                <div className="grid lg:grid-cols-2 gap-6">
+                  {/* Left Side - Hotels & Restaurants List */}
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      <h4 className="font-medium text-gray-700">
+                        Hotels & Restaurants in {destination} ({hotelsAndRestaurants.length})
+                      </h4>
+                      {loadingHotelsRestaurants ? (
+                        <div className="text-center py-8">
+                          <Loader2 className="h-8 w-8 mx-auto mb-3 animate-spin text-blue-600" />
+                          <p className="text-gray-600">Finding hotels and restaurants...</p>
+                        </div>
+                      ) : hotelsAndRestaurants.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                          <Hotel className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                          <p>No hotels or restaurants found for this destination</p>
+                          <p className="text-sm">Try searching for nearby accommodations and dining options</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                          {hotelsAndRestaurants.map((place, index) => (
+                            <div 
+                              key={place.id} 
+                              className={`border rounded-lg transition-all ${
+                                selectedHotelRestaurant?.id === place.id 
+                                  ? 'bg-blue-50 border-blue-200 shadow-sm' 
+                                  : 'bg-white border-gray-200 hover:bg-gray-50'
+                              }`}
+                            >
+                              <div 
+                                className="flex items-center gap-3 p-3 cursor-pointer"
+                                onClick={() => handleHotelRestaurantClick(place)}
+                              >
+                                {/* Sequential Number */}
+                                <div className={`flex-shrink-0 w-8 h-8 text-white rounded-full flex items-center justify-center font-semibold text-sm ${
+                                  place.category === 'Accommodation' ? 'bg-blue-600' : 'bg-orange-600'
+                                }`}>
+                                  {index + 1}
+                                </div>
+                                
+                                {/* Place Info */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <h5 className="font-medium text-gray-900 truncate">{place.name}</h5>
+                                    <span className="text-xs text-gray-500">
+                                      {place.category === 'Accommodation' ? '🏨' : '🍽️'}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-gray-600 truncate">{place.description}</p>
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`text-xs mt-1 ${
+                                      place.category === 'Accommodation' 
+                                        ? 'border-blue-200 text-blue-700' 
+                                        : 'border-orange-200 text-orange-700'
+                                    }`}
+                                  >
+                                    {place.category}
+                                  </Badge>
+                                </div>
+                                
+                                {/* Rating Info */}
+                                {place.aiData?.highlights && place.aiData.highlights.length > 0 && (
+                                  <div className="text-xs text-gray-500">
+                                    {place.aiData.highlights[0]}
+                                  </div>
+                                )}
+                              </div>
 
-              {/* Right Side - Interactive Map */}
-              <div className="space-y-2">
-                <h3 className="text-lg font-semibold text-gray-800">Places Map</h3>
-                <div className="bg-gray-100 rounded-lg overflow-hidden">
-                  <PlacesMap
-                    destination={destination}
-                    center={destinationCoordinates || { lat: 28.6139, lng: 77.2090 }}
-                    className="w-full h-96 rounded-lg"
-                    selectedPlaces={selectedPlaces}
-                    selectedPlace={selectedPlace}
-                    onPlaceClick={handlePlaceClick}
+                              {/* Expanded Details */}
+                              {selectedHotelRestaurant?.id === place.id && place.aiData && (
+                                <div className="px-3 pb-3 border-t border-gray-100 bg-blue-50/30">
+                                  <div className="pt-3 space-y-2 text-sm">
+                                    {/* Address/Contact */}
+                                    {place.aiData.localTips && place.aiData.localTips.length > 0 && (
+                                      <div className="flex items-center gap-2">
+                                        <MapPin className="h-3 w-3 text-gray-600" />
+                                        <span className="text-xs text-gray-600">{place.aiData.localTips[0]}</span>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Pricing & Hours */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                      {place.aiData.entryFee && (
+                                        <div className="flex items-center gap-2">
+                                          <IndianRupee className="h-3 w-3 text-green-600" />
+                                          <span className="text-xs text-gray-600">{place.aiData.entryFee}</span>
+                                        </div>
+                                      )}
+                                      {place.aiData.bestTimeToVisit && (
+                                        <div className="flex items-center gap-2">
+                                          <Clock className="h-3 w-3 text-blue-600" />
+                                          <span className="text-xs text-gray-600">{place.aiData.bestTimeToVisit}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right Side - Hotels & Restaurants Map */}
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold text-gray-800">Hotels & Restaurants Map</h3>
+                    <div className="bg-gray-100 rounded-lg overflow-hidden">
+                      <PlacesMap
+                        destination={destination}
+                        center={destinationCoordinates || { lat: 28.6139, lng: 77.2090 }}
+                        className="w-full h-96 rounded-lg"
+                        selectedPlaces={hotelsAndRestaurants}
+                        selectedPlace={selectedHotelRestaurant}
+                        onPlaceClick={handleHotelRestaurantClick}
+                      />
+                    </div>
+                    <div className="text-sm text-gray-600 space-y-1">
+                      <p>• Click on items in the list to zoom to their location</p>
+                      <p>• 🏨 Blue markers = Hotels, 🍽️ Orange markers = Restaurants</p>
+                      <p>• Use map controls to switch between Map/Satellite view</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Error Handling */}
+              {geminiData.error && activeContentTab === 'places' && (
+                <div className="mt-4">
+                  <ErrorFallback 
+                    error={geminiData.error}
+                    onRetry={() => window.location.reload()}
+                    title="AI Places Enhancement Failed"
+                    description="Using local places database for this destination."
                   />
                 </div>
-                <div className="text-sm text-gray-600 space-y-1">
-                  <p>• Click on places in the list to zoom to their location</p>
-                  <p>• Click on map markers to see place details</p>
-                  <p>• Use map controls to switch between Map/Satellite view</p>
-                </div>
-              </div>
-            </div>
-            </AIContentWrapper>
-            {geminiData.error && (
-              <div className="mt-4">
-                <ErrorFallback 
-                  error={geminiData.error}
-                  onRetry={() => window.location.reload()}
-                  title="AI Places Enhancement Failed"
-                  description="Using local places database for this destination."
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Local Cuisine Recommendations */}
           <Card id="cuisine" className="shadow-lg">
@@ -1455,8 +1760,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                 {geminiData.isLoading && (
                   <LoadingSpinner size="sm" />
                 )}
+                {/* AI Badge hidden as requested */}
                 {(geminiData.tripDetails?.localCuisine || (geminiData.cuisineRecommendations && geminiData.cuisineRecommendations.length > 0)) && !geminiData.isLoading && (
-                  <AIBadge label="AI Enhanced" />
+                  // <AIBadge label="AI Enhanced" />
+                  null
                 )}
               </CardTitle>
             </CardHeader>
@@ -1500,8 +1807,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                 {geminiData.isLoading && (
                   <LoadingSpinner size="sm" />
                 )}
+                {/* AI Badge hidden as requested */}
                 {(geminiData.tripDetails?.detailedItinerary || (geminiData.itinerary && geminiData.itinerary.length > 0)) && !geminiData.isLoading && (
-                  <AIBadge label="AI Generated" />
+                  // <AIBadge label="AI Generated" />
+                  null
                 )}
               </CardTitle>
             </CardHeader>
@@ -1532,8 +1841,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                               {day.day}
                             </span>
                             <h3 className="font-bold text-lg text-blue-700">{day.title}</h3>
+                            {/* AI Badge hidden as requested */}
                             {day.isAI && day.hasAIContent && (
-                              <AIBadge size="sm" label="AI Generated" />
+                              // <AIBadge size="sm" label="AI Generated" />
+                              null
                             )}
                           </div>
                           <div className="flex items-center gap-2">
@@ -1662,8 +1973,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                 {geminiData.isLoading && (
                   <LoadingSpinner size="sm" />
                 )}
+                {/* AI Badge hidden as requested */}
                 {geminiData.tripDetails?.packingList && !geminiData.isLoading && (
-                  <AIBadge label="AI Enhanced" />
+                  // <AIBadge label="AI Enhanced" />
+                  null
                 )}
               </CardTitle>
             </CardHeader>
@@ -1707,8 +2020,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                 {geminiData.isLoading && (
                   <LoadingSpinner size="sm" />
                 )}
+                {/* AI Badge hidden as requested */}
                 {geminiData.tripDetails?.bestTimeToVisit && !geminiData.isLoading && (
-                  <AIBadge label="AI Enhanced" />
+                  // <AIBadge label="AI Enhanced" />
+                  null
                 )}
               </CardTitle>
             </CardHeader>
@@ -1738,26 +2053,26 @@ Whether you're interested in exploring museums and galleries, experiencing night
           </CardContent>
         </Card>
 
-          {/* What Our Users Say About This Destination */}
+          {/* Shared Experiences */}
           <Card id="testimonials" className="shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Star className="h-5 w-5 text-yellow-500" />
-                What Our Users Say About This Destination
+                Shared Experiences
                 {geminiData.isLoading && (
                   <LoadingSpinner size="sm" />
                 )}
+                {/* AI Badge hidden as requested */}
                 {geminiData.testimonials && geminiData.testimonials.length > 0 && !geminiData.isLoading && (
-                  <AIBadge label="AI Enhanced" />
+                  // <AIBadge label="AI Enhanced" />
+                  null
                 )}
               </CardTitle>
-              <CardContent className="pt-4">
-                <p className="text-gray-600 mb-6">
-                  See what fellow travelers say about their experiences in {destination}
-                </p>
-              </CardContent>
             </CardHeader>
-          <CardContent>
+            <CardContent>
+              <p className="text-gray-600 mb-6">
+                See what fellow travelers say about their experiences in {destination}
+              </p>
             {geminiData.isLoading ? (
               <AIContentWrapper
                 isLoading={true}
@@ -1783,10 +2098,10 @@ Whether you're interested in exploring museums and galleries, experiencing night
                   {(showAllTestimonials ? destinationTestimonials : destinationTestimonials.slice(0, 3)).map((testimonial, index) => (
                     <Card key={`${testimonial.name}-${testimonial.location}-${index}`} className="border-0 shadow-md bg-gray-50 relative">
                       <CardContent className="pt-6">
-                        {/* AI Badge for AI-generated testimonials */}
+                        {/* AI Badge for AI-generated testimonials - Hidden as requested */}
                         {testimonial.isAI && (
                           <div className="absolute top-2 right-2">
-                            <AIBadge size="sm" label="AI" />
+                            {/* <AIBadge size="sm" label="AI" /> */}
                           </div>
                         )}
                         
@@ -1851,45 +2166,68 @@ Whether you're interested in exploring museums and galleries, experiencing night
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MessageSquare className="h-5 w-5 text-blue-600" />
-                We'd Love Your Feedback!
+                Share Your Experiences
               </CardTitle>
-              <CardContent className="pt-4">
-                <p className="text-gray-600 mb-6">
-                  Help us improve your travel planning experience by sharing your thoughts about {destination} or our platform.
-                </p>
-              </CardContent>
             </CardHeader>
-          <CardContent>
+            <CardContent>
+              <p className="text-gray-600 mb-6">
+                Help us improve your travel planning experience by sharing your thoughts about {destination} or our platform.
+              </p>
+              
+              {/* Reward Points Information */}
+              {tripPlanId && user && (
+                <div className={`border rounded-lg p-4 mb-6 ${
+                  isPremiumUser
+                    ? "bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200"
+                    : hasBeenRewarded 
+                      ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-200" 
+                      : "bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200"
+                }`}>
+                  <div className={`flex items-center gap-2 ${
+                    isPremiumUser
+                      ? "text-purple-800"
+                      : hasBeenRewarded ? "text-green-800" : "text-yellow-800"
+                  }`}>
+                    <span className="text-lg">
+                      {isPremiumUser ? "👑" : hasBeenRewarded ? "✅" : "🎁"}
+                    </span>
+                    <span className="font-medium">
+                      {isPremiumUser 
+                        ? "Premium Subscriber" 
+                        : hasBeenRewarded ? "Reward Points Earned!" : "Earn Reward Points!"
+                      }
+                    </span>
+                  </div>
+                  <p className={`text-sm mt-1 ${
+                    isPremiumUser
+                      ? "text-purple-700"
+                      : hasBeenRewarded ? "text-green-700" : "text-yellow-700"
+                  }`}>
+                    {isPremiumUser
+                      ? "As a premium subscriber, you already enjoy unlimited trip generations! Reward points are not available for premium users."
+                      : hasBeenRewarded 
+                        ? "You have already submitted feedback for this trip plan and received your 100 reward points!"
+                        : "Submit feedback for this trip plan and earn 100 reward points! Use points to get free credits in our Rewards page."
+                    }
+                  </p>
+                </div>
+              )}
+              
             <form onSubmit={handleFeedbackSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="feedback-name" className="text-sm font-medium text-gray-700">
-                    Name <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="feedback-name"
-                    type="text"
-                    placeholder="Your name"
-                    value={feedbackForm.name}
-                    onChange={(e) => handleFeedbackChange('name', e.target.value)}
-                    className="mt-1"
-                    required
-                  />
+              {/* Hidden fields for auto-populated user data */}
+              <input type="hidden" value={feedbackForm.name} />
+              <input type="hidden" value={feedbackForm.email} />
+              
+              {/* Show user info if available */}
+              {user && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-blue-800">
+                    <span className="font-medium">Submitting as:</span> {feedbackForm.name} ({feedbackForm.email})
+                  </p>
                 </div>
-                <div>
-                  <Label htmlFor="feedback-email-new" className="text-sm font-medium text-gray-700">
-                    Email <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="feedback-email-new"
-                    type="email"
-                    placeholder="your.email@example.com"
-                    value={feedbackForm.email}
-                    onChange={(e) => handleFeedbackChange('email', e.target.value)}
-                    className="mt-1"
-                    required
-                  />
-                </div>
+              )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="feedback-from-where" className="text-sm font-medium text-gray-700">
                     From Where <span className="text-red-500">*</span>
@@ -1904,34 +2242,32 @@ Whether you're interested in exploring museums and galleries, experiencing night
                     required
                   />
                 </div>
-              </div>
-
-              {/* Star Rating Field */}
-              <div>
-                <Label className="text-sm font-medium text-gray-700">
-                  Rate Us <span className="text-red-500">*</span>
-                </Label>
-                <div className="flex items-center gap-1 mt-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => handleFeedbackChange('rating', star)}
-                      className={`text-2xl transition-colors duration-200 hover:scale-110 transform ${
-                        star <= feedbackForm.rating 
-                          ? 'text-yellow-400' 
-                          : 'text-gray-300 hover:text-yellow-300'
-                      }`}
-                    >
-                      ★
-                    </button>
-                  ))}
-                  <span className="ml-2 text-sm text-gray-600">
-                    {feedbackForm.rating > 0 
-                      ? `${feedbackForm.rating} star${feedbackForm.rating > 1 ? 's' : ''}`
-                      : 'Click to rate'
-                    }
-                  </span>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">
+                    Rate Us <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="flex items-center gap-1 mt-2">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => handleFeedbackChange('rating', star)}
+                        className={`text-2xl transition-colors duration-200 hover:scale-110 transform ${
+                          star <= feedbackForm.rating 
+                            ? 'text-yellow-400' 
+                            : 'text-gray-300 hover:text-yellow-300'
+                        }`}
+                      >
+                        ★
+                      </button>
+                    ))}
+                    <span className="ml-2 text-sm text-gray-600">
+                      {feedbackForm.rating > 0 
+                        ? `${feedbackForm.rating} star${feedbackForm.rating > 1 ? 's' : ''}`
+                        : 'Click to rate'
+                      }
+                    </span>
+                  </div>
                 </div>
               </div>
               
@@ -1952,13 +2288,22 @@ Whether you're interested in exploring museums and galleries, experiencing night
               <div className="flex justify-end">
                 <Button 
                   type="submit" 
-                  disabled={isSubmittingFeedback || !feedbackForm.comments.trim() || !feedbackForm.name.trim() || !feedbackForm.email.trim() || !feedbackForm.fromWhere.trim() || feedbackForm.rating === 0}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6"
+                  disabled={isSubmittingFeedback || !feedbackForm.comments.trim() || !feedbackForm.fromWhere.trim() || feedbackForm.rating === 0 || !user || hasBeenRewarded}
+                  className={`px-6 ${
+                    hasBeenRewarded 
+                      ? "bg-green-600 hover:bg-green-600 cursor-not-allowed opacity-75" 
+                      : "bg-blue-600 hover:bg-blue-700"
+                  } text-white`}
                 >
                   {isSubmittingFeedback ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                       Submitting...
+                    </>
+                  ) : hasBeenRewarded ? (
+                    <>
+                      <span className="mr-2">✅</span>
+                      Feedback Already Submitted
                     </>
                   ) : (
                     <>

@@ -44,9 +44,7 @@ const MyTrips: React.FC = () => {
   const closeTripModal = () => {
     setSelectedTrip(null);
     setIsTripModalOpen(false);
-  };
-
-  if (!user) {
+  };  if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
         <Navbar />
@@ -60,18 +58,11 @@ const MyTrips: React.FC = () => {
         </div>
       </div>
     );
-  }
-
-  return (
+  }  return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <Navbar />
       
       <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">My Trips</h1>
-          <p className="text-gray-600">View and manage all your trip plans</p>
-        </div>
 
         {/* Trip Overview Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -192,12 +183,11 @@ const MyTrips: React.FC = () => {
               </div>
             )}
           </CardContent>
-        </Card>
-
-        {/* Quick Actions */}
+        </Card>        {/* Quick Actions */}
         <div className="mt-8 text-center">
           <div className="flex justify-center space-x-4">
-            <Link to="/planner">
+            {/* Plan New Trip and Manage Credits buttons hidden as requested */}
+            {/* <Link to="/planner">
               <Button className="flex items-center space-x-2">
                 <MapPin className="h-4 w-4" />
                 <span>Plan New Trip</span>
@@ -207,7 +197,7 @@ const MyTrips: React.FC = () => {
                 <Coins className="h-4 w-4" />
                 <span>Manage Credits ({userCredits ?? 0})</span>
               </Button>
-            </Link>
+            </Link> */}
           </div>
         </div>
       </div>

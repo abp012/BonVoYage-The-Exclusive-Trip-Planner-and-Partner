@@ -11,6 +11,7 @@ export const submitFeedback = mutation({
     rating: v.number(), // Star rating 1-5
     destination: v.optional(v.string()),
     clerkUserId: v.optional(v.string()), // Use Clerk user ID as string instead
+    tripPlanId: v.optional(v.id("tripPlans")), // Link to trip plan for reward points
   },
   handler: async (ctx, args) => {
     // Find the user in our database using the Clerk ID if provided
@@ -34,7 +35,7 @@ export const submitFeedback = mutation({
       createdAt: Date.now(),
     });
 
-    return { success: true, feedbackId };
+    return { success: true, feedbackId, tripPlanId: args.tripPlanId };
   },
 });
 

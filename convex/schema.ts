@@ -1,8 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-export default defineSchema({
-  users: defineTable({
+export default defineSchema({  users: defineTable({
     clerkId: v.string(),
     email: v.string(),
     name: v.optional(v.string()),
@@ -11,6 +10,7 @@ export default defineSchema({
     avatar: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
     credits: v.number(),
+    rewardPoints: v.optional(v.number()), // Reward points for credits redemption
     totalCreditsUsed: v.number(),
     totalTripsPlanned: v.number(),
     lastActiveAt: v.number(),
@@ -22,10 +22,87 @@ export default defineSchema({
     timezone: v.optional(v.string()),
     emailNotifications: v.optional(v.boolean()),
     isActive: v.optional(v.boolean()),
+    // Premium subscription fields
+    isPremium: v.optional(v.boolean()),
+    premiumExpiresAt: v.optional(v.number()),
+    creditsBeforePremium: v.optional(v.number()), // Store credits before premium activation
+    pointsBeforePremium: v.optional(v.number()), // Store points before premium activation
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])
-    .index("by_last_active", ["lastActiveAt"]),
+    .index("by_last_active", ["lastActiveAt"])
+    .index("by_premium", ["isPremium"]),
+
+  // Subscription plans
+  subscriptionPlans: defineTable({
+    name: v.string(),
+    duration: v.string(), // "1_month", "5_months", "1_year", "2_years"
+    durationInDays: v.number(),
+    price: v.number(),
+    currency: v.string(),
+    features: v.array(v.string()),
+    isPopular: v.optional(v.boolean()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_active", ["isActive"])
+    .index("by_duration", ["duration"]),
+
+  // User subscriptions
+  subscriptions: defineTable({
+    userId: v.id("users"),
+    planId: v.id("subscriptionPlans"),
+    status: v.union(
+      v.literal("active"),
+      v.literal("expired"),
+      v.literal("cancelled"),
+      v.literal("pending")
+    ),
+    startDate: v.number(),
+    endDate: v.number(),
+    price: v.number(),
+    currency: v.string(),
+    paymentMethod: v.optional(v.string()),
+    transactionId: v.optional(v.string()),
+    autoRenew: v.optional(v.boolean()),
+    creditsBeforeActivation: v.optional(v.number()),
+    pointsBeforeActivation: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"])
+    .index("by_end_date", ["endDate"]),
+
+  // Payment transactions
+  paymentTransactions: defineTable({
+    userId: v.id("users"),
+    subscriptionId: v.optional(v.id("subscriptions")),
+    type: v.union(v.literal("subscription"), v.literal("credits")),
+    amount: v.number(),
+    currency: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("refunded")
+    ),
+    paymentMethod: v.string(),
+    transactionId: v.string(),
+    description: v.string(),
+    metadata: v.optional(v.object({
+      planName: v.optional(v.string()),
+      duration: v.optional(v.string()),
+      creditsAmount: v.optional(v.number()),
+    })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"])
+    .index("by_type", ["type"])
+    .index("by_transaction_id", ["transactionId"]),
 
   // User preferences and settings
   userPreferences: defineTable({
@@ -50,7 +127,6 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"]),
-
   // User activity log
   userActivity: defineTable({
     userId: v.id("users"),
@@ -64,7 +140,9 @@ export default defineSchema({
       v.literal("profile_updated"),
       v.literal("feedback_submitted"),
       v.literal("destination_searched"),
-      v.literal("itinerary_downloaded")
+      v.literal("itinerary_downloaded"),
+      v.literal("points_earned"),
+      v.literal("credits_redeemed")
     ),
     metadata: v.optional(v.object({
       destination: v.optional(v.string()),
@@ -243,10 +321,114 @@ export default defineSchema({
     adminResponse: v.optional(v.string()),
     respondedAt: v.optional(v.number()),
     createdAt: v.number(),
-  })
-    .index("by_created_at", ["createdAt"])
+  })    .index("by_created_at", ["createdAt"])
     .index("by_destination", ["destination"])
     .index("by_user", ["userId"])
     .index("by_status", ["status"])
     .index("by_feedback_type", ["feedbackType"]),
+
+  // Track feedback rewards to prevent duplicate claims
+  feedbackRewards: defineTable({
+    userId: v.id("users"),
+    tripPlanId: v.id("tripPlans"),
+    feedbackId: v.id("feedback"),
+    pointsAwarded: v.number(),
+    awardedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_trip_plan", ["tripPlanId"])
+    .index("by_feedback", ["feedbackId"])
+    .index("by_user_trip", ["userId", "tripPlanId"]),
+  // Track reward point transactions
+  rewardTransactions: defineTable({
+    userId: v.id("users"),
+    type: v.union(
+      v.literal("earned_feedback"), // Earned 50 points for feedback
+      v.literal("redeemed_credits") // Redeemed points for credits
+    ),
+    pointsAmount: v.number(), // Positive for earned, negative for redeemed
+    description: v.string(),
+    relatedId: v.optional(v.union(v.id("feedback"), v.id("tripPlans"))),
+    creditsReceived: v.optional(v.number()), // For redemption transactions
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_type", ["type"])
+    .index("by_created_at", ["createdAt"]),
+
+  // Travel Expenses - Track day-wise expenses for trips
+  travelExpenses: defineTable({
+    userId: v.id("users"),
+    tripPlanId: v.optional(v.id("tripPlans")), // Link to specific trip plan
+    tripName: v.string(), // Custom trip name for standalone expense tracking
+    destination: v.string(),
+    startDate: v.string(),
+    endDate: v.string(),
+    totalDays: v.number(),
+    currency: v.string(),
+    totalBudget: v.optional(v.number()), // Planned budget
+    totalSpent: v.number(), // Actual total spent
+    status: v.union(
+      v.literal("planning"), // Before trip
+      v.literal("ongoing"), // During trip
+      v.literal("completed") // After trip
+    ),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_trip_plan", ["tripPlanId"])
+    .index("by_status", ["status"])
+    .index("by_created_at", ["createdAt"]),
+
+  // Daily Expenses - Individual expense entries per day
+  dailyExpenses: defineTable({
+    travelExpenseId: v.id("travelExpenses"),
+    userId: v.id("users"),
+    day: v.number(), // Day number (1, 2, 3, etc.)
+    date: v.string(), // Actual date (YYYY-MM-DD)
+    category: v.union(
+      v.literal("accommodation"),
+      v.literal("food"),
+      v.literal("transportation"),
+      v.literal("activities"),
+      v.literal("shopping"),
+      v.literal("miscellaneous")
+    ),
+    subcategory: v.optional(v.string()), // e.g., "breakfast", "lunch", "hotel", "taxi"
+    description: v.string(),
+    amount: v.number(),
+    currency: v.string(),
+    paymentMethod: v.optional(v.union(
+      v.literal("cash"),
+      v.literal("card"),
+      v.literal("upi"),
+      v.literal("other")
+    )),
+    receipt: v.optional(v.string()), // URL to receipt image
+    location: v.optional(v.string()), // Where the expense was made
+    isPlanned: v.boolean(), // true for planned expenses, false for actual
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_travel_expense", ["travelExpenseId"])
+    .index("by_user", ["userId"])
+    .index("by_day", ["day"])
+    .index("by_date", ["date"])
+    .index("by_category", ["category"])
+    .index("by_is_planned", ["isPlanned"]),
+
+  // Expense Categories - User-defined custom expense categories
+  expenseCategories: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    icon: v.optional(v.string()), // Emoji or icon identifier
+    color: v.optional(v.string()), // Color hex code
+    isDefault: v.boolean(), // System default vs user custom
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_is_default", ["isDefault"]),
 });

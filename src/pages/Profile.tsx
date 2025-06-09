@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { User, Mail, Coins, Calendar, MapPin, Edit } from "lucide-react";
+import { User, Mail, Coins, Calendar, MapPin, Crown, Clock, Shield } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -25,6 +25,18 @@ const Profile: React.FC = () => {
     user ? { clerkId: user.id } : "skip"
   );
 
+  // Get premium subscription status
+  const isPremium = useQuery(
+    api.subscriptions.isPremiumUser,
+    user ? { clerkId: user.id } : "skip"
+  );
+
+  // Get user subscription details
+  const subscription = useQuery(
+    api.subscriptions.getUserSubscription,
+    user ? { clerkId: user.id } : "skip"
+  );
+
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -39,10 +51,26 @@ const Profile: React.FC = () => {
     if (lastName) return lastName;
     return "User";
   };
-
   const getInitials = (firstName?: string | null, lastName?: string | null) => {
     if (!firstName && !lastName) return "U";
     return `${firstName?.charAt(0) || ""}${lastName?.charAt(0) || ""}`.toUpperCase();
+  };
+
+  const formatTimeRemaining = (expiresAt: number) => {
+    const now = Date.now();
+    const timeLeft = expiresAt - now;
+    
+    if (timeLeft <= 0) return "Expired";
+    
+    const days = Math.floor(timeLeft / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((timeLeft % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      if (days > 0) {
+      return `${days} day${days !== 1 ? 's' : ''} remaining`;
+    } else if (hours > 0) {
+      return `${hours} hour${hours !== 1 ? 's' : ''} remaining`;
+    } else {
+      return "Less than 1 hour remaining";
+    }
   };
 
   if (!user) {
@@ -64,17 +92,10 @@ const Profile: React.FC = () => {
   const totalTrips = tripHistory?.length ?? 0;
   const uniqueDestinations = tripHistory ? new Set(tripHistory.map(trip => trip.destination)).size : 0;
   const memberSince = user.createdAt ? formatDate(user.createdAt.getTime()) : "Recently";
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+  return (    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <Navbar />
       
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">My Profile</h1>
-          <p className="text-gray-600">Manage your account information and travel preferences</p>
-        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Profile Card */}
@@ -156,23 +177,114 @@ const Profile: React.FC = () => {
                         </span>
                       </div>
                     </div>
-                    
-                    <div>
+                      <div>
                       <label className="text-sm font-medium text-gray-500">Account Status</label>
-                      <div className="mt-1">
-                        <Badge variant="default" className="bg-green-600">
-                          Active
-                        </Badge>
+                      <div className="flex items-center space-x-2 mt-1">
+                        {isPremium ? (
+                          <>
+                            <Crown className="h-4 w-4 text-yellow-600" />
+                            <Badge variant="default" className="bg-gradient-to-r from-yellow-600 to-orange-600 text-white">
+                              Premium
+                            </Badge>
+                          </>
+                        ) : (
+                          <>
+                            <Shield className="h-4 w-4 text-green-600" />
+                            <Badge variant="default" className="bg-green-600">
+                              Active
+                            </Badge>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Premium Subscription Status */}
+                {isPremium && subscription && (
+                  <>
+                    <Separator />
+                    <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg p-4">
+                      <div className="flex items-center space-x-2 mb-3">
+                        <Crown className="h-5 w-5 text-yellow-600" />
+                        <h3 className="text-lg font-semibold text-yellow-800">Premium Subscription</h3>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm font-medium text-yellow-700">Plan</label>
+                          <p className="text-yellow-900 font-semibold">{subscription.plan?.name || 'Premium'}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-yellow-700">Status</label>
+                          <div className="flex items-center space-x-2">
+                            <Clock className="h-4 w-4 text-yellow-600" />
+                            <span className="text-yellow-900 font-semibold">
+                              {subscription.endDate ? formatTimeRemaining(subscription.endDate) : 'Active'}
+                            </span>
+                          </div>
+                        </div>
+                        {subscription.endDate && (
+                          <div className="md:col-span-2">
+                            <label className="text-sm font-medium text-yellow-700">Expires On</label>
+                            <p className="text-yellow-900">{formatDate(subscription.endDate)}</p>
+                          </div>
+                        )}
+                      </div>                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
-          </div>
-
-          {/* Statistics Sidebar */}
+          </div>{/* Statistics Sidebar */}
           <div className="space-y-6">
+            {/* Premium Status Card */}
+            {isPremium && subscription ? (
+              <Card className="border-yellow-200 bg-gradient-to-br from-yellow-50 to-orange-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center space-x-2 text-yellow-800">
+                    <Crown className="h-5 w-5" />
+                    <span>Premium Member</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-yellow-700">
+                      {subscription.endDate ? formatTimeRemaining(subscription.endDate) : 'Active'}
+                    </div>
+                    <p className="text-sm text-yellow-600">Until Renewal</p>
+                  </div>
+                  {subscription.endDate && (
+                    <>
+                      <Separator className="bg-yellow-200" />
+                      <div className="text-center">
+                        <p className="text-sm text-yellow-700">
+                          Renews on {formatDate(subscription.endDate)}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-blue-200 bg-gradient-to-br from-blue-50 to-purple-50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center space-x-2 text-blue-800">
+                    <Crown className="h-5 w-5" />
+                    <span>Upgrade to Premium</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-blue-600 mb-3">
+                    Unlock unlimited trip planning and exclusive features!
+                  </p>
+                  <Link to="/premium" className="block">
+                    <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                      Upgrade Now
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Travel Statistics */}
             <Card>
               <CardHeader>
@@ -197,9 +309,8 @@ const Profile: React.FC = () => {
                   <p className="text-sm text-gray-600">Available Credits</p>
                 </div>
               </CardContent>
-            </Card>
-
-            {/* Quick Actions */}
+            </Card>            {/* Quick Actions - Hidden as requested */}
+            {/* 
             <Card>
               <CardHeader>
                 <CardTitle>Quick Actions</CardTitle>
@@ -216,15 +327,14 @@ const Profile: React.FC = () => {
                     <Calendar className="h-4 w-4 mr-2" />
                     View My Trips
                   </Button>
-                </Link>
-                <Link to="/my-credits" className="block">
+                </Link>                <Link to="/my-credits" className="block">
                   <Button variant="outline" className="w-full">
                     <Coins className="h-4 w-4 mr-2" />
                     Manage Credits
-                  </Button>
-                </Link>
+                  </Button>                </Link>
               </CardContent>
             </Card>
+            */}
           </div>
         </div>
       </div>

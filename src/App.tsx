@@ -12,7 +12,10 @@ import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
 import MyCredits from "./pages/MyCredits";
 import MyTrips from "./pages/MyTrips";
+import MyTravelExpenses from "./pages/MyTravelExpenses";
 import Profile from "./pages/Profile";
+import RewardsCredits from "./pages/RewardsCredits";
+import PremiumSubscription from "./pages/PremiumSubscription";
 import UserDashboard from "./components/UserDashboard";
 import FeedbackTest from "./pages/FeedbackTest";
 import NotFound from "./pages/NotFound";
@@ -58,7 +61,10 @@ const AppContent = () => (
       <Route path="/destinations" element={<Destinations />} />
       <Route path="/my-credits" element={<MyCredits />} />
       <Route path="/my-trips" element={<MyTrips />} />
+      <Route path="/my-expenses" element={<MyTravelExpenses />} />
       <Route path="/profile" element={<Profile />} />
+      <Route path="/rewards" element={<RewardsCredits />} />
+      <Route path="/premium" element={<PremiumSubscription />} />
       <Route path="/dashboard" element={<UserDashboard />} />
       <Route path="/feedback-test" element={<FeedbackTest />} />
       <Route path="/signin" element={<SignIn />} />

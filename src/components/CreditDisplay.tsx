@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Coins, Plus, Check } from "lucide-react";
+import { Coins, Plus, Check, Crown } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -12,10 +12,15 @@ import { toast } from "sonner";
 const CreditDisplay: React.FC = () => {
   const { user } = useUser();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  
-  // Get user's current credits
+    // Get user's current credits
   const credits = useQuery(
     api.users.getUserCredits,
+    user ? { clerkId: user.id } : "skip"
+  );
+  
+  // Check if user is premium
+  const isPremium = useQuery(
+    api.subscriptions.isPremiumUser,
     user ? { clerkId: user.id } : "skip"
   );
   
@@ -57,8 +62,17 @@ const CreditDisplay: React.FC = () => {
     { amount: 15, price: "₹649", description: "Great value for regular travelers", popular: true },
     { amount: 30, price: "₹1,249", description: "Best for frequent trip planners", popular: false },
   ];
-
   if (!user) return null;
+
+  // Show premium status if user is premium
+  if (isPremium) {
+    return (
+      <div className="flex items-center space-x-2 bg-gradient-to-r from-yellow-100 to-orange-100 px-3 py-2 rounded-full border border-yellow-200">
+        <Crown className="h-4 w-4 text-yellow-600" />
+        <span className="text-sm font-medium text-yellow-800">Premium • Unlimited</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center space-x-2">

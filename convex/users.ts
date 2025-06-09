@@ -39,9 +39,7 @@ export const createOrGetUser = mutation({
       });
 
       return existingUser;
-    }
-
-    // Create new user with initial credits
+    }    // Create new user with initial credits
     const now = Date.now();
     const userId = await ctx.db.insert("users", {
       clerkId: args.clerkId,
@@ -51,6 +49,7 @@ export const createOrGetUser = mutation({
       lastName: args.lastName,
       avatar: args.avatar,
       credits: INITIAL_CREDITS,
+      rewardPoints: 0, // Start with 0 reward points
       totalCreditsUsed: 0,
       totalTripsPlanned: 0,
       lastActiveAt: now,
@@ -349,8 +348,7 @@ export const deductCredit = mutation({
         total: v.string(),
       })),
     })),
-  },
-  handler: async (ctx, args) => {
+  },  handler: async (ctx, args) => {
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
@@ -360,13 +358,15 @@ export const deductCredit = mutation({
       throw new Error("User not found");
     }
 
-    if (user.credits < 1) {
-      throw new Error("Insufficient credits");
-    }
-
     const now = Date.now();
-
-    // Create trip plan record with detailed information
+    
+    // Check if user has active premium subscription
+    const isPremium = user.isPremium && user.premiumExpiresAt && user.premiumExpiresAt > now;
+    
+    // If not premium, check credits
+    if (!isPremium && user.credits < 1) {
+      throw new Error("Insufficient credits");
+    }    // Create trip plan record with detailed information
     const tripPlanId = await ctx.db.insert("tripPlans", {
       userId: user._id,
       destination: args.tripPlanData.destination,
@@ -377,7 +377,7 @@ export const deductCredit = mutation({
       budget: args.tripPlanData.budget,
       activities: args.tripPlanData.activities,
       travelWith: args.tripPlanData.travelWith,
-      creditUsed: 1,
+      creditUsed: isPremium ? 0 : 1, // No credit used for premium users
       createdAt: now,
       status: "active",
       isPublic: false,
@@ -387,25 +387,32 @@ export const deductCredit = mutation({
       tripDetails: args.tripDetails,
     });
 
-    // Deduct credit from user and update stats
-    await ctx.db.patch(user._id, {
-      credits: user.credits - 1,
-      totalCreditsUsed: user.totalCreditsUsed + 1,
+    // Update user stats - only deduct credits if not premium
+    const updateData: any = {
       totalTripsPlanned: user.totalTripsPlanned + 1,
       lastActiveAt: now,
       updatedAt: now,
-    });
+    };
 
-    // Record credit transaction
-    await ctx.db.insert("creditTransactions", {
-      userId: user._id,
-      type: "debit",
-      amount: 1,
-      description: `Trip plan generated for ${args.tripPlanData.destination}`,
-      relatedTripPlanId: tripPlanId,
-      status: "completed",
-      createdAt: now,
-    });
+    if (!isPremium) {
+      updateData.credits = user.credits - 1;
+      updateData.totalCreditsUsed = user.totalCreditsUsed + 1;
+    }
+
+    await ctx.db.patch(user._id, updateData);
+
+    // Record credit transaction only if not premium
+    if (!isPremium) {
+      await ctx.db.insert("creditTransactions", {
+        userId: user._id,
+        type: "debit",
+        amount: 1,
+        description: `Trip plan generated for ${args.tripPlanData.destination}`,
+        relatedTripPlanId: tripPlanId,
+        status: "completed",
+        createdAt: now,
+      });
+    }
 
     // Log trip planning activity
     await ctx.db.insert("userActivity", {
@@ -416,12 +423,11 @@ export const deductCredit = mutation({
         tripId: tripPlanId,
       },
       createdAt: now,
-    });
-
-    return {
+    });    return {
       success: true,
-      remainingCredits: user.credits - 1,
+      remainingCredits: isPremium ? "Unlimited" : user.credits - 1,
       tripPlanId,
+      isPremium,
     };
   },
 });
@@ -744,5 +750,284 @@ export const logActivity = mutation({
     });
 
     return { success: true };
+  },
+});
+
+// Award reward points for feedback submission
+export const awardFeedbackPoints = mutation({
+  args: {
+    clerkId: v.string(),
+    tripPlanId: v.id("tripPlans"),
+    feedbackId: v.id("feedback"),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }    // Check if user has a premium subscription - premium users don't get points
+    const now = Date.now();
+    const activeSubscription = await ctx.db
+      .query("subscriptions")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .filter((q) => q.and(
+        q.eq(q.field("status"), "active"),
+        q.gt(q.field("endDate"), now)
+      ))
+      .first();
+
+    if (activeSubscription) {
+      return { 
+        success: false, 
+        message: "Premium subscribers do not receive reward points for feedback" 
+      };
+    }
+
+    // Check if user has already been rewarded for this trip plan
+    const existingReward = await ctx.db
+      .query("feedbackRewards")
+      .withIndex("by_user_trip", (q) => q.eq("userId", user._id).eq("tripPlanId", args.tripPlanId))
+      .first();
+
+    if (existingReward) {
+      return { 
+        success: false, 
+        message: "You have already been rewarded for providing feedback on this trip plan" 
+      };
+    }
+
+    const pointsToAward = 100;
+
+    // Update user's reward points
+    const currentPoints = user.rewardPoints || 0;
+    await ctx.db.patch(user._id, {
+      rewardPoints: currentPoints + pointsToAward,
+      updatedAt: now,
+    });
+
+    // Record the feedback reward
+    await ctx.db.insert("feedbackRewards", {
+      userId: user._id,
+      tripPlanId: args.tripPlanId,
+      feedbackId: args.feedbackId,
+      pointsAwarded: pointsToAward,
+      awardedAt: now,
+    });
+
+    // Record reward transaction
+    await ctx.db.insert("rewardTransactions", {
+      userId: user._id,
+      type: "earned_feedback",
+      pointsAmount: pointsToAward,
+      description: "Earned 100 points for submitting trip feedback",
+      relatedId: args.feedbackId,
+      createdAt: now,
+    });
+
+    // Log activity
+    await ctx.db.insert("userActivity", {
+      userId: user._id,
+      activityType: "points_earned",
+      metadata: {
+        tripId: args.tripPlanId,
+      },
+      createdAt: now,
+    });
+
+    return { 
+      success: true, 
+      pointsAwarded: pointsToAward,
+      totalPoints: currentPoints + pointsToAward 
+    };
+  },
+});
+
+// Redeem reward points for credits
+export const redeemPointsForCredits = mutation({
+  args: {
+    clerkId: v.string(),
+    pointsToRedeem: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const currentPoints = user.rewardPoints || 0;
+
+    // Check if user has enough points
+    if (currentPoints < args.pointsToRedeem) {
+      return {
+        success: false,
+        message: "Insufficient reward points",
+        currentPoints,
+      };
+    }
+
+    // Calculate credits based on redemption tiers
+    let creditsToAward = 0;
+    let description = "";
+
+    if (args.pointsToRedeem === 250) {
+      creditsToAward = 2;
+      description = "Redeemed 250 points for 2 credits";
+    } else if (args.pointsToRedeem === 500) {
+      creditsToAward = 6;
+      description = "Redeemed 500 points for 6 credits";
+    } else if (args.pointsToRedeem === 1000) {
+      creditsToAward = 15;
+      description = "Redeemed 1000 points for 15 credits";
+    } else {
+      return {
+        success: false,
+        message: "Invalid redemption amount. Valid options: 250, 500, or 1000 points",
+      };
+    }
+
+    const now = Date.now();
+
+    // Update user's points and credits
+    await ctx.db.patch(user._id, {
+      rewardPoints: currentPoints - args.pointsToRedeem,
+      credits: user.credits + creditsToAward,
+      updatedAt: now,
+    });
+
+    // Record credit transaction
+    await ctx.db.insert("creditTransactions", {
+      userId: user._id,
+      type: "credit",
+      amount: creditsToAward,
+      description,
+      status: "completed",
+      createdAt: now,
+    });
+
+    // Record reward transaction (negative points)
+    await ctx.db.insert("rewardTransactions", {
+      userId: user._id,
+      type: "redeemed_credits",
+      pointsAmount: -args.pointsToRedeem,
+      description,
+      creditsReceived: creditsToAward,
+      createdAt: now,
+    });
+
+    // Log activity
+    await ctx.db.insert("userActivity", {
+      userId: user._id,
+      activityType: "credits_redeemed",
+      metadata: {
+        creditsAmount: creditsToAward,
+      },
+      createdAt: now,
+    });
+
+    return {
+      success: true,
+      creditsAwarded: creditsToAward,
+      pointsRedeemed: args.pointsToRedeem,
+      remainingPoints: currentPoints - args.pointsToRedeem,
+      newCreditBalance: user.credits + creditsToAward,
+    };
+  },
+});
+
+// Get user's reward points balance and transaction history
+export const getUserRewardPoints = query({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) {
+      return { rewardPoints: 0, transactions: [] };
+    }
+
+    const transactions = await ctx.db
+      .query("rewardTransactions")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .take(20);
+
+    return {
+      rewardPoints: user.rewardPoints || 0,
+      transactions,
+    };
+  },
+});
+
+// Check if user has already been rewarded for feedback on a specific trip plan
+export const hasUserBeenRewardedForTrip = query({
+  args: { 
+    clerkId: v.string(),
+    tripPlanId: v.id("tripPlans"),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    if (!user) {
+      return false;
+    }
+
+    const existingReward = await ctx.db
+      .query("feedbackRewards")
+      .withIndex("by_user_trip", (q) => q.eq("userId", user._id).eq("tripPlanId", args.tripPlanId))
+      .first();
+
+    return !!existingReward;
+  },
+});
+
+// Get redemption tiers and availability
+export const getRedemptionTiers = query({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    const currentPoints = user?.rewardPoints || 0;
+
+    const tiers = [
+      {
+        points: 250,
+        credits: 2,
+        available: currentPoints >= 250,
+        description: "Basic Pack",
+      },
+      {
+        points: 500,
+        credits: 6,
+        available: currentPoints >= 500,
+        description: "Value Pack (Best Value!)",
+        badge: "Most Popular",
+      },
+      {
+        points: 1000,
+        credits: 15,
+        available: currentPoints >= 1000,
+        description: "Premium Pack",
+      },
+    ];
+
+    return {
+      currentPoints,
+      tiers,
+    };
   },
 });
